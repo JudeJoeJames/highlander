@@ -1,0 +1,22 @@
+{
+  "name": "highlander",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Web-based multiplayer Magic: the Gathering (Commander/EDH) — 2-4 players.",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "start": "npm run build:client && npm run start --workspace @highlander/server",
+    "build:client": "npm run build --workspace @highlander/client",
+    "dev:server": "npm run dev --workspace @highlander/server",
+    "dev:client": "npm run dev --workspace @highlander/client",
+    "typecheck": "tsc -b packages/shared packages/server",
+    "test": "node --test --import tsx packages/shared/test/*.test.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

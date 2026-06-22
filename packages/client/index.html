@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Highlander — Commander</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="board"></canvas>
+      <div id="labels"></div>
+
+      <!-- Top status bar -->
+      <header id="statusbar">
+        <span id="conn" class="pill">connecting…</span>
+        <span id="gameid" class="pill"></span>
+        <span id="turninfo" class="pill"></span>
+      </header>
+
+      <!-- Bottom action toolbar -->
+      <footer id="toolbar"></footer>
+
+      <!-- Floating per-card action menu -->
+      <div id="cardmenu" class="hidden"></div>
+
+      <!-- Chat -->
+      <section id="chat" class="collapsed">
+        <button id="chat-toggle" type="button">Chat</button>
+        <div id="chat-log"></div>
+        <form id="chat-form">
+          <input id="chat-input" type="text" autocomplete="off" placeholder="Say something…" />
+        </form>
+      </section>
+
+      <!-- Join overlay -->
+      <div id="join">
+        <form id="join-form">
+          <h1>Highlander</h1>
+          <p class="sub">Web Commander — join a table</p>
+          <label>Your name<input id="join-name" type="text" required maxlength="20" /></label>
+          <label>Table ID<input id="join-game" type="text" required maxlength="40" /></label>
+          <button type="submit">Join table</button>
+          <p class="hint">Open this page in two tabs (or share the link) to play together.</p>
+        </form>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

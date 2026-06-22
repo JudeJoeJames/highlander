@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+.env
+.env.*
+
+# Machine-local Claude Code settings (keep shared .claude/settings.json if any)
+.claude/settings.local.json
