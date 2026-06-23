@@ -41,6 +41,23 @@ export function getPlayerId(): PlayerId {
   return id;
 }
 
+/**
+ * A stable per-browser user key for *deck ownership* — distinct from the
+ * per-tab game identity above. Decks should persist across sessions and tabs
+ * (unlike a game seat), so this lives in localStorage. When magic-link auth
+ * lands, both collapse into the real account id.
+ */
+export function getUserId(): string {
+  const override = params.get("user");
+  if (override) return override;
+  let id = localStorage.getItem("hl-userId");
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem("hl-userId", id);
+  }
+  return id;
+}
+
 /** Name is per-tab too, so two tabs don't inherit one another's display name. */
 export function getSavedName(): string {
   return sessionStorage.getItem("hl-name") ?? "";

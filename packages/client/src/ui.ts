@@ -1,5 +1,4 @@
 import { Zone, type Action, type CardInstance, type GameState, type PlayerId } from "@highlander/shared";
-import { testDeck } from "./deck";
 
 type Send = (action: Action) => void;
 
@@ -27,8 +26,13 @@ export function statusBar() {
   };
 }
 
+export interface ToolbarActions {
+  onLoadDeck: () => void;
+  onOpenDecks: () => void;
+}
+
 /** Bottom toolbar of common manual actions. */
-export function toolbar(send: Send, you: PlayerId) {
+export function toolbar(send: Send, you: PlayerId, actions: ToolbarActions) {
   const host = document.getElementById("toolbar")!;
   const btn = (label: string, onClick: () => void, cls = "") => {
     const b = document.createElement("button");
@@ -39,7 +43,8 @@ export function toolbar(send: Send, you: PlayerId) {
     return b;
   };
 
-  btn("Load deck", () => send(testDeck(you)));
+  btn("Decks", actions.onOpenDecks);
+  btn("Load deck", actions.onLoadDeck);
   btn("Start", () => send({ type: "start_game" }), "primary");
   btn("Draw", () => send({ type: "draw", playerId: you, count: 1 }));
   btn("Shuffle", () => send({ type: "shuffle", playerId: you }));

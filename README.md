@@ -32,9 +32,15 @@ packages/
             #   redaction.ts  viewFor(state, player) — hides libraries/hands/face-down
             #   rng.ts        deterministic, seeded RNG (no Math.random)
             #   protocol.ts   client <-> server wire messages
-  server/   # Authoritative WebSocket server. One GameRoom per game id.
+            #   cards.ts      ResolvedCard shape (Scryfall-resolved data)
+            #   deck.ts       deck model + Commander-legality validator
+  server/   # Authoritative WebSocket server + JSON API. One GameRoom per game.
             #   imports the SAME reducer; clients are never trusted.
-  client/   # Vite + Three.js board. Imports shared for types + protocol.
+            #   cards.ts      Scryfall resolver + in-memory cache
+            #   search.ts     Scryfall card search
+            #   decks.ts      file-backed deck persistence (per owner)
+  client/   # Vite + Three.js board + deck builder. Imports shared.
+            #   deckbuilder.ts  search / edit / validate / save UI
             #   net.ts      WebSocket client (hello / command / snapshot)
             #   scene.ts    renderer, lights, table, CSS2D label layer
             #   camera.ts   focus-on-active-player + manual-pan cooldown
@@ -111,7 +117,10 @@ active player but yields to you for ~6s after you pan/zoom.
 - [x] **Real cards**: server-side Scryfall resolver + cache (`/api/cards`,
       batched ≤75, throttled), client `CardLibrary` that lazily loads images and
       re-lays the board as faces arrive; placeholder face while loading.
-- [ ] **Deckbuilder**: Scryfall search, Commander-legality validation, deck save.
+- [x] **Deckbuilder**: Scryfall search (`/api/search`), live Commander-legality
+      validation (shared validator: size/singleton/color-identity/format/
+      commander), and server-side deck persistence (`/api/decks`, owned by a
+      per-browser user key). Saved decks load into a game via the deck picker.
 - [ ] **Auth & profiles**: magic-link login, win/loss history.
 - [ ] **Lobby**: public game list + shareable join links (REST alongside the WS).
 - [ ] **Chat**: already in the protocol; surface it in the client.

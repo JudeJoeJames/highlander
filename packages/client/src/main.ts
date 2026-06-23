@@ -1,12 +1,15 @@
 import { Raycaster, Vector2 } from "three";
-import type { GameState, PlayerId } from "@highlander/shared";
-import { DEFAULT_GAME_ID, getPlayerId, getSavedName, saveName, SERVER_URL } from "./config";
+import { toLoadDeck, type GameState, type PlayerId, type SavedDeck } from "@highlander/shared";
+import { DEFAULT_GAME_ID, getPlayerId, getSavedName, getUserId, saveName, SERVER_URL } from "./config";
 import { Net } from "./net";
 import { createScene } from "./scene";
 import { CameraController } from "./camera";
 import { Board } from "./board";
 import { CardLibrary } from "./cards";
 import { cardMenu, chatPanel, statusBar, toolbar } from "./ui";
+import { openDeckbuilder } from "./deckbuilder";
+import { listDecks } from "./api";
+import { testDeck } from "./deck";
 
 const you: PlayerId = getPlayerId();
 
@@ -95,6 +98,66 @@ const nameInput = document.getElementById("join-name") as HTMLInputElement;
 const gameInput = document.getElementById("join-game") as HTMLInputElement;
 nameInput.value = getSavedName();
 gameInput.value = DEFAULT_GAME_ID;
+document.getElementById("join-decks")?.addEventListener("click", () => openDeckbuilder(getUserId()));
+
+/** Modal to load one of your saved decks (or the placeholder test deck) into the game. */
+async function openDeckPicker(): Promise<void> {
+  if (!net) return;
+  const decks = await listDecks(getUserId()).catch(() => [] as SavedDeck[]);
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  const close = () => overlay.remove();
+  overlay.addEventListener("pointerdown", (e) => {
+    if (e.target === overlay) close();
+  });
+
+  const panel = document.createElement("div");
+  panel.className = "modal";
+  const title = document.createElement("h3");
+  title.textContent = "Load a deck";
+  panel.appendChild(title);
+
+  const list = document.createElement("div");
+  list.className = "modal-list";
+  const pick = (commanders: string[], library: string[]) => {
+    net?.send({ type: "load_deck", playerId: you, commanders, library });
+    close();
+  };
+
+  if (!decks.length) {
+    const note = document.createElement("div");
+    note.className = "modal-note";
+    note.textContent = "No saved decks yet — build one with “Decks”, or use the test deck.";
+    list.appendChild(note);
+  }
+  for (const d of decks) {
+    const size = d.commanders.length + d.cards.reduce((n, e) => n + e.count, 0);
+    const b = document.createElement("button");
+    b.textContent = `${d.name} (${size})`;
+    b.addEventListener("click", () => {
+      const { commanders, library } = toLoadDeck(d);
+      pick(commanders, library);
+    });
+    list.appendChild(b);
+  }
+  const testBtn = document.createElement("button");
+  testBtn.className = "primary";
+  testBtn.textContent = "Test deck (placeholder)";
+  testBtn.addEventListener("click", () => {
+    const d = testDeck(you);
+    pick(d.commanders, d.library);
+  });
+  list.appendChild(testBtn);
+
+  panel.appendChild(list);
+  const cancel = document.createElement("button");
+  cancel.textContent = "Cancel";
+  cancel.addEventListener("click", close);
+  panel.appendChild(cancel);
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+}
 
 joinForm.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -104,7 +167,10 @@ joinForm.addEventListener("submit", (e) => {
   status.setGame(gameId);
 
   chat = chatPanel((text) => net?.chat(text));
-  toolbar((action) => net?.send(action), you);
+  toolbar((action) => net?.send(action), you, {
+    onOpenDecks: () => openDeckbuilder(getUserId()),
+    onLoadDeck: () => void openDeckPicker(),
+  });
 
   net = new Net(
     SERVER_URL,

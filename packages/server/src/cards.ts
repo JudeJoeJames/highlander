@@ -30,12 +30,14 @@ interface ScryFace {
   type_line?: string;
   image_uris?: ScryImageUris;
 }
-interface ScryCard {
+export interface ScryCard {
   id: string;
   name: string;
   type_line?: string;
   mana_cost?: string;
   oracle_text?: string;
+  color_identity?: string[];
+  legalities?: Record<string, string>;
   image_uris?: ScryImageUris;
   card_faces?: ScryFace[];
 }
@@ -108,7 +110,7 @@ export class CardCache {
   }
 }
 
-function toResolved(identifier: string, c: ScryCard): ResolvedCard {
+export function toResolved(identifier: string, c: ScryCard): ResolvedCard {
   const faces = c.card_faces?.map((f) => ({
     name: f.name,
     imageSmall: f.image_uris?.small,
@@ -126,6 +128,8 @@ function toResolved(identifier: string, c: ScryCard): ResolvedCard {
     typeLine: c.type_line,
     manaCost: c.mana_cost,
     oracleText: c.oracle_text,
+    colorIdentity: c.color_identity ?? [],
+    commanderLegal: c.legalities?.commander === "legal",
     imageSmall: img?.small,
     imageNormal: img?.normal,
     ...(faces ? { faces } : {}),

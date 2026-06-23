@@ -25,6 +25,10 @@ export interface ResolvedCard {
   typeLine?: string;
   manaCost?: string;
   oracleText?: string;
+  /** WUBRG color identity, e.g. ["G","W"]. Empty = colorless. */
+  colorIdentity?: string[];
+  /** True if legal in the Commander format (legalities.commander === "legal"). */
+  commanderLegal?: boolean;
   imageSmall?: string;
   imageNormal?: string;
   /** Present for double-faced / split cards. */

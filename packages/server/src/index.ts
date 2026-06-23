@@ -7,6 +7,8 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { ClientToServer, ServerToClient } from "@highlander/shared";
 import { GameRoom } from "./room.js";
 import { CardCache } from "./cards.js";
+import { searchCards } from "./search.js";
+import { DeckStore } from "./decks.js";
 
 /**
  * WebSocket game server. URL carries the game id: ws://host/ws/<gameId>.
@@ -24,6 +26,7 @@ import { CardCache } from "./cards.js";
 const PORT = Number(process.env.PORT ?? 8787);
 const rooms = new Map<string, GameRoom>();
 const cardCache = new CardCache();
+const deckStore = new DeckStore(normalize(join(fileURLToPath(import.meta.url), "..", "..", "data", "decks.json")));
 let seedCounter = 0x9e3779b9; // arbitrary; per-room seeds derive deterministically
 
 // Resolve the client build relative to this file (packages/server/src).
@@ -91,25 +94,57 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-/** Card-resolution API: POST /api/cards { identifiers: string[] }. */
+function sendJson(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
+}
+
+/**
+ * JSON API:
+ *   POST   /api/cards            { identifiers } -> resolved card data
+ *   GET    /api/search?q=&page=  -> Scryfall search results
+ *   GET    /api/decks?owner=     -> decks owned by `owner`
+ *   POST   /api/decks            SavedDeck (with ownerId) -> upserted deck
+ *   DELETE /api/decks/:id?owner= -> { ok }
+ */
 async function handleApi(req: IncomingMessage, res: ServerResponse): Promise<void> {
-  const path = (req.url ?? "").split("?")[0];
-  if (req.method === "POST" && path === "/api/cards") {
-    let identifiers: string[] = [];
-    try {
+  const url = new URL(req.url ?? "/", "http://localhost");
+  const path = url.pathname;
+  try {
+    if (req.method === "POST" && path === "/api/cards") {
       const parsed = JSON.parse(await readBody(req)) as { identifiers?: unknown };
-      if (Array.isArray(parsed.identifiers)) {
-        identifiers = parsed.identifiers.filter((x): x is string => typeof x === "string").slice(0, 1000);
-      }
-    } catch {
-      res.writeHead(400, { "content-type": "application/json" }).end(JSON.stringify({ error: "bad request" }));
-      return;
+      const identifiers = Array.isArray(parsed.identifiers)
+        ? parsed.identifiers.filter((x): x is string => typeof x === "string").slice(0, 1000)
+        : [];
+      return sendJson(res, 200, { cards: await cardCache.resolve(identifiers) });
     }
-    const cards = await cardCache.resolve(identifiers);
-    res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ cards }));
-    return;
+
+    if (req.method === "GET" && path === "/api/search") {
+      const q = (url.searchParams.get("q") ?? "").trim();
+      const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);
+      if (!q) return sendJson(res, 200, { cards: [], hasMore: false, total: 0 });
+      return sendJson(res, 200, await searchCards(q, page));
+    }
+
+    if (path === "/api/decks") {
+      if (req.method === "GET") {
+        return sendJson(res, 200, { decks: deckStore.list(url.searchParams.get("owner") ?? "") });
+      }
+      if (req.method === "POST") {
+        const deck = await deckStore.upsert(JSON.parse(await readBody(req)), Date.now());
+        return sendJson(res, 200, { deck });
+      }
+    }
+
+    if (req.method === "DELETE" && path.startsWith("/api/decks/")) {
+      const id = decodeURIComponent(path.slice("/api/decks/".length));
+      const ok = await deckStore.remove(id, url.searchParams.get("owner") ?? "");
+      return sendJson(res, ok ? 200 : 404, { ok });
+    }
+  } catch (err) {
+    console.error("API error:", err);
+    return sendJson(res, 400, { error: err instanceof Error ? err.message : "bad request" });
   }
-  res.writeHead(404, { "content-type": "application/json" }).end(JSON.stringify({ error: "not found" }));
+  sendJson(res, 404, { error: "not found" });
 }
 
 const http = createServer((req, res) => {
