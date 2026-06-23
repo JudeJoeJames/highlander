@@ -24,6 +24,8 @@ export interface ResolvedCard {
   name: string;
   typeLine?: string;
   manaCost?: string;
+  /** Converted mana cost / mana value. */
+  cmc?: number;
   oracleText?: string;
   /** WUBRG color identity, e.g. ["G","W"]. Empty = colorless. */
   colorIdentity?: string[];

@@ -35,6 +35,7 @@ export interface ScryCard {
   name: string;
   type_line?: string;
   mana_cost?: string;
+  cmc?: number;
   oracle_text?: string;
   color_identity?: string[];
   legalities?: Record<string, string>;
@@ -127,6 +128,7 @@ export function toResolved(identifier: string, c: ScryCard): ResolvedCard {
     name: c.name,
     typeLine: c.type_line,
     manaCost: c.mana_cost,
+    cmc: c.cmc,
     oracleText: c.oracle_text,
     colorIdentity: c.color_identity ?? [],
     commanderLegal: c.legalities?.commander === "legal",

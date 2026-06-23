@@ -32,6 +32,7 @@ export function openDeckbuilder(userId: string): void {
       <h2>Deck Builder</h2>
       <select id="db-list" title="Load a saved deck"><option value="">— saved decks —</option></select>
       <button id="db-new" type="button">New</button>
+      <button id="db-import" type="button">Import</button>
       <button id="db-delete" type="button" class="danger">Delete</button>
       <span class="db-spacer"></span>
       <span id="db-status" class="db-status"></span>
@@ -52,6 +53,8 @@ export function openDeckbuilder(userId: string): void {
         <div class="db-section-title">Commander</div>
         <div id="db-commanders" class="db-commanders"></div>
         <div id="db-validation" class="db-validation"></div>
+        <div class="db-section-title">Mana curve</div>
+        <div id="db-curve" class="db-curve"></div>
         <div class="db-section-title">Cards (<span id="db-count">0</span>)</div>
         <div id="db-cards" class="db-cards"></div>
         <button id="db-save" type="button" class="primary db-save">Save deck</button>
@@ -171,6 +174,32 @@ export function openDeckbuilder(userId: string): void {
     const total = working.commanders.length + working.cards.reduce((n, e) => n + e.count, 0);
     $("#db-count").textContent = String(total);
     renderValidation();
+    renderCurve();
+  }
+
+  /** Mana curve of nonland cards in the 99, bucketed by mana value (7+ combined). */
+  function renderCurve() {
+    const host = $("#db-curve");
+    host.innerHTML = "";
+    const buckets = [0, 0, 0, 0, 0, 0, 0, 0]; // index = mana value, 7 = "7+"
+    for (const e of working.cards) {
+      const card = resolved[e.id];
+      if (!card) continue;
+      if ((card.typeLine ?? "").toLowerCase().includes("land")) continue;
+      const idx = Math.min(7, Math.max(0, Math.floor(card.cmc ?? 0)));
+      buckets[idx] += e.count;
+    }
+    const max = Math.max(1, ...buckets);
+    buckets.forEach((n, i) => {
+      const bar = el("div", { class: "db-curve-bar" });
+      bar.style.height = `${(n / max) * 100}%`;
+      const col = el("div", { class: "db-curve-col" }, [
+        el("div", { class: "db-curve-n" }, [document.createTextNode(String(n))]),
+        el("div", { class: "db-curve-barwrap" }, [bar]),
+        el("div", { class: "db-curve-label" }, [document.createTextNode(i === 7 ? "7+" : String(i))]),
+      ]);
+      host.appendChild(col);
+    });
   }
 
   function renderValidation() {
@@ -268,6 +297,68 @@ export function openDeckbuilder(userId: string): void {
     }
   }
 
+  function openImportModal() {
+    const overlay = el("div", { class: "modal-overlay" });
+    const close = () => overlay.remove();
+    overlay.addEventListener("pointerdown", (e) => {
+      if (e.target === overlay) close();
+    });
+    const ta = el("textarea", {
+      class: "db-import-text",
+      placeholder: "Commander\n1 Atraxa, Praetors' Voice\n\nDeck\n1 Sol Ring\n10 Forest\n…",
+    }) as HTMLTextAreaElement;
+    const importBtn = button("Import", () => {
+      void importDeck(ta.value);
+      close();
+    });
+    importBtn.className = "primary";
+    const panel = el("div", { class: "modal" }, [
+      el("h3", {}, [document.createTextNode("Import decklist")]),
+      el("div", { class: "modal-note" }, [
+        document.createTextNode('Paste lines like "1 Sol Ring". A "Commander" header marks commanders; set/collector annotations are ignored.'),
+      ]),
+      ta,
+      el("div", { class: "db-import-actions" }, [importBtn, button("Cancel", close)]),
+    ]);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+    ta.focus();
+  }
+
+  async function importDeck(text: string) {
+    const parsed = parseDecklist(text);
+    const names = [...new Set([...parsed.commanders, ...parsed.cards.map((c) => c.name)])];
+    if (!names.length) return;
+    setStatus(`Resolving ${names.length} cards…`);
+    const map = await resolveCards(names).catch(() => ({}) as Record<string, ResolvedCard>);
+
+    // Prefer the resolved Scryfall id as the deck identifier (stable + real art);
+    // fall back to the raw name (shown as "unknown") when a line doesn't resolve.
+    const idFor = (cardName: string): string => {
+      const card = map[cardName];
+      if (card && card.found && card.scryfallId) {
+        resolved[card.scryfallId] = { ...card, identifier: card.scryfallId };
+        return card.scryfallId;
+      }
+      resolved[cardName] = { identifier: cardName, name: cardName, found: false };
+      return cardName;
+    };
+
+    working.commanders = parsed.commanders.map(idFor);
+    const merged = new Map<string, number>();
+    for (const c of parsed.cards) {
+      const id = idFor(c.name);
+      merged.set(id, (merged.get(id) ?? 0) + c.count);
+    }
+    working.cards = [...merged.entries()]
+      .filter(([id]) => !working.commanders.includes(id))
+      .map(([id, count]) => ({ id, count }));
+
+    const notFound = names.filter((n) => !map[n]?.found).length;
+    setStatus(notFound ? `Imported — ${notFound} card(s) not found` : "Imported ✓");
+    renderDeck();
+  }
+
   // --- wire events ---
   $("#db-close").addEventListener("click", close);
   $("#db-save").addEventListener("click", save);
@@ -275,11 +366,22 @@ export function openDeckbuilder(userId: string): void {
     page += 1;
     void doSearch(false);
   });
-  $("#db-search-form").addEventListener("submit", (e) => {
-    e.preventDefault();
+  const runSearch = () => {
     query = $<HTMLInputElement>("#db-q").value.trim();
     void doSearch(true);
+  };
+  $("#db-search-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    runSearch();
   });
+  // Explicit Enter handling (preventDefault stops the implicit submit firing too).
+  $<HTMLInputElement>("#db-q").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      runSearch();
+    }
+  });
+  $("#db-import").addEventListener("click", openImportModal);
   $<HTMLInputElement>("#db-name").addEventListener("input", (e) => {
     working.name = (e.target as HTMLInputElement).value;
   });
@@ -326,4 +428,55 @@ function button(label: string, onClick: () => void): HTMLButtonElement {
   b.textContent = label;
   b.addEventListener("click", onClick);
   return b;
+}
+
+interface ParsedCard {
+  count: number;
+  name: string;
+}
+
+/**
+ * Parse a pasted decklist. Handles the common formats: "1 Card", "1x Card",
+ * with optional "Commander" / "Deck" section headers (Moxfield/Archidekt style)
+ * and trailing set/collector annotations like "(CMM) 410". Lines under a
+ * sideboard/maybeboard/tokens header are ignored.
+ */
+export function parseDecklist(text: string): { commanders: string[]; cards: ParsedCard[] } {
+  const commanders: string[] = [];
+  const cards: ParsedCard[] = [];
+  let section: "main" | "commander" | "ignore" = "main";
+
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (!line || line.startsWith("//") || line.startsWith("#")) continue;
+    const lower = line.toLowerCase();
+    if (/^commanders?\b:?$/.test(lower)) {
+      section = "commander";
+      continue;
+    }
+    if (/^(deck|mainboard|main|cards|companion)\b:?$/.test(lower)) {
+      section = "main";
+      continue;
+    }
+    if (/^(sideboard|sb|maybeboard|maybe|tokens)\b/.test(lower)) {
+      section = "ignore";
+      continue;
+    }
+    if (section === "ignore") continue;
+
+    const m = line.match(/^(\d+)\s*[xX]?\s+(.+)$/);
+    let count = 1;
+    let name = line;
+    if (m) {
+      count = parseInt(m[1]!, 10);
+      name = m[2]!;
+    }
+    // Drop trailing set/collector annotations (real card names have no parens).
+    name = name.replace(/\s*\(.*$/, "").trim();
+    if (!name) continue;
+
+    if (section === "commander") commanders.push(name);
+    else cards.push({ count: Math.max(1, count), name });
+  }
+  return { commanders, cards };
 }

@@ -97,7 +97,8 @@ button.danger { border-color: var(--danger); color: #f0b4b2; }
 #join-form .secondary { background: transparent; border-color: var(--border); }
 
 /* Modal (deck picker) */
-.modal-overlay { position: absolute; inset: 0; z-index: 60; display: grid; place-items: center; background: rgba(8,10,14,0.8); }
+/* z-index 80 keeps modals above the deck builder (70) and join overlay (50). */
+.modal-overlay { position: absolute; inset: 0; z-index: 80; display: grid; place-items: center; background: rgba(8,10,14,0.8); }
 .modal { background: var(--panel-solid); border: 1px solid var(--border); border-radius: 14px; padding: 20px; width: min(420px, 92vw); max-height: 80vh; overflow: auto; }
 .modal h3 { margin: 0 0 12px; }
 .modal-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
@@ -146,6 +147,18 @@ button.danger { border-color: var(--danger); color: #f0b4b2; }
 .db-issue { font-size: 12px; color: var(--muted); }
 .db-issue.error { color: #f0a6a4; } .db-issue.warning { color: #e6c878; }
 .db-save { margin-top: auto; }
+
+/* Mana curve */
+.db-curve { display: flex; align-items: stretch; gap: 6px; height: 96px; padding: 6px; border: 1px solid var(--border); border-radius: 10px; }
+.db-curve-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.db-curve-n { font-size: 11px; color: var(--muted); }
+.db-curve-barwrap { flex: 1; width: 70%; display: flex; align-items: flex-end; }
+.db-curve-bar { width: 100%; background: var(--accent-2); border-radius: 3px 3px 0 0; min-height: 2px; }
+.db-curve-label { font-size: 11px; color: var(--muted); }
+
+/* Import modal */
+.db-import-text { width: 100%; min-height: 240px; resize: vertical; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px; font-family: ui-monospace, monospace; font-size: 13px; }
+.db-import-actions { display: flex; gap: 8px; margin-top: 10px; }
 
 @media (max-width: 760px) {
   .db-body { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
