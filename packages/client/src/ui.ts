@@ -129,8 +129,10 @@ export function cardDetail(send: Send) {
       act("Exile", { type: "move_card", instanceId: id, toZone: Zone.Exile });
       act("Library top", { type: "move_card", instanceId: id, toZone: Zone.Library, index: 0 });
       if (onBf) {
-        act("+1/+1", { type: "adjust_card_counter", instanceId: id, key: "+1/+1", delta: 1 }, false);
-        act("−1/+1", { type: "adjust_card_counter", instanceId: id, key: "+1/+1", delta: -1 }, false);
+        act("+1/+1 ＋", { type: "adjust_card_counter", instanceId: id, key: "+1/+1", delta: 1 }, false);
+        act("+1/+1 −", { type: "adjust_card_counter", instanceId: id, key: "+1/+1", delta: -1 }, false);
+        act("−1/−1 ＋", { type: "adjust_card_counter", instanceId: id, key: "-1/-1", delta: 1 }, false);
+        act("−1/−1 −", { type: "adjust_card_counter", instanceId: id, key: "-1/-1", delta: -1 }, false);
       }
       el.appendChild(actions);
     }

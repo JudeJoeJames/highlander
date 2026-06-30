@@ -1,6 +1,7 @@
 import {
   DoubleSide,
   Mesh,
+  MeshBasicMaterial,
   MeshStandardMaterial,
   Object3D,
   PlaneGeometry,
@@ -14,7 +15,19 @@ import {
   type PlayerId,
   type PlayerState,
 } from "@highlander/shared";
-import { battlefieldPoint, CARD_H, CARD_W, fanPositions, gridPositions, seatFrames, seatYaw, type SeatFrame } from "./layout";
+import {
+  battlefieldPoint,
+  CARD_H,
+  CARD_W,
+  fanPositions,
+  gridPositions,
+  seatFrames,
+  seatYaw,
+  ZONE_LAYOUT,
+  zoneAnchor,
+  zoneAt,
+  type SeatFrame,
+} from "./layout";
 import { backTexture, imageCardTexture, placeholderTexture } from "./textures";
 import type { CardLibrary } from "./cards";
 
@@ -37,6 +50,8 @@ export class Board {
   private frames: SeatFrame[] = [];
   /** While set, this card is being dragged locally and is not re-laid by update(). */
   private draggingId: string | null = null;
+  private readonly zonePadMeshes = new Map<string, Mesh>();
+  private readonly zoneLabels = new Map<string, { obj: CSS2DObject; el: HTMLDivElement }>();
 
   constructor(
     private readonly scene: Scene,
@@ -61,6 +76,7 @@ export class Board {
       const player = state.players[frame.playerId];
       if (!player) continue;
       this.layoutSeat(state, frame, player, live);
+      this.renderZones(state, frame, player, live);
       this.updateNameplate(state, frame, player, you);
     }
 
@@ -112,6 +128,85 @@ export class Board {
   moveMeshLocal(id: string, p: { x: number; y: number; z: number }): void {
     const obj = this.cards.get(id);
     if (obj) obj.group.position.set(p.x, p.y, p.z);
+  }
+
+  /** Pad meshes (carry userData {playerId, zone}) for click/hit testing. */
+  zonePads(): Mesh[] {
+    return [...this.zonePadMeshes.values()];
+  }
+
+  /** Which of `playerId`'s zone pads (if any) a world point falls on. */
+  zoneHitTest(playerId: PlayerId, point: { x: number; y: number; z: number }): Zone | null {
+    const frame = this.frames.find((f) => f.playerId === playerId);
+    if (!frame) return null;
+    return zoneAt(frame, point);
+  }
+
+  /** Draw each seat's Library/Graveyard/Exile/Command as labeled pads with a top card. */
+  private renderZones(state: GameState, frame: SeatFrame, player: PlayerState, live: Set<string>): void {
+    const yaw = seatYaw(frame);
+    ZONE_LAYOUT.forEach(({ zone, label }, i) => {
+      const anchor = zoneAnchor(frame, i);
+      this.ensurePad(player.id, zone, anchor);
+
+      const ids = this.zoneIds(player, zone);
+      // Library/Graveyard "top" is the front of the array for library, back for the rest.
+      const topId = zone === Zone.Library ? ids[0] : ids[ids.length - 1];
+      if (topId) {
+        const top = state.cards[topId];
+        if (top) this.placeCard(top, { x: anchor.x, y: 0.03, z: anchor.z }, yaw, live);
+      }
+      this.updateZoneLabel(player.id, zone, `${label} ${ids.length}`, anchor);
+    });
+  }
+
+  private zoneIds(player: PlayerState, zone: Zone): string[] {
+    switch (zone) {
+      case Zone.Library:
+        return player.library;
+      case Zone.Graveyard:
+        return player.graveyard;
+      case Zone.Exile:
+        return player.exile;
+      case Zone.Command:
+        return player.command;
+      default:
+        return [];
+    }
+  }
+
+  private ensurePad(playerId: PlayerId, zone: Zone, anchor: { x: number; y: number; z: number }): void {
+    const key = `${playerId}:${zone}`;
+    let pad = this.zonePadMeshes.get(key);
+    if (!pad) {
+      pad = new Mesh(
+        new PlaneGeometry(CARD_W * 1.2, CARD_H * 1.2),
+        new MeshBasicMaterial({ color: 0x223043, transparent: true, opacity: 0.5 }),
+      );
+      pad.rotation.x = -Math.PI / 2;
+      pad.userData.playerId = playerId;
+      pad.userData.zone = zone;
+      this.scene.add(pad);
+      this.zonePadMeshes.set(key, pad);
+    }
+    pad.position.set(anchor.x, 0.004, anchor.z);
+  }
+
+  private updateZoneLabel(playerId: PlayerId, zone: Zone, text: string, anchor: { x: number; z: number }): void {
+    const key = `${playerId}:${zone}`;
+    let entry = this.zoneLabels.get(key);
+    if (!entry) {
+      const el = document.createElement("div");
+      el.className = "zonelabel";
+      const obj = new CSS2DObject(el);
+      const holder = new Object3D();
+      holder.add(obj);
+      this.scene.add(holder);
+      holder.position.set(anchor.x, 0.25, anchor.z);
+      entry = { obj, el };
+      this.zoneLabels.set(key, entry);
+    }
+    entry.el.textContent = text;
   }
 
   private placeCard(card: CardInstance, pos: { x: number; y: number; z: number }, yaw: number, live: Set<string>): void {

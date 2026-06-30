@@ -366,6 +366,16 @@ function applyAction(state: GameState, action: Action, actorId: PlayerId): strin
       return `${p.name} mulliganed.`;
     }
 
+    case "untap_all": {
+      requireActive(state);
+      const p = player(state, action.playerId);
+      for (const id of state.battlefield) {
+        const c = state.cards[id]!;
+        if (c.controllerId === action.playerId) c.tapped = false;
+      }
+      return `${p.name} untapped their permanents.`;
+    }
+
     case "set_phase": {
       requireActive(state);
       state.turn.phase = action.phase;

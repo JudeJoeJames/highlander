@@ -53,6 +53,7 @@ export type Action =
       y?: number;
     }
   | { type: "set_tapped"; instanceId: InstanceId; tapped: boolean }
+  | { type: "untap_all"; playerId: PlayerId }
   | { type: "adjust_card_counter"; instanceId: InstanceId; key: string; delta: number }
   | { type: "set_card_flags"; instanceId: InstanceId; flipped?: boolean; faceDown?: boolean }
   | { type: "set_card_position"; instanceId: InstanceId; x: number; y: number }

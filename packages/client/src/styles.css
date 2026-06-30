@@ -75,6 +75,13 @@ button.danger { border-color: var(--danger); color: #f0b4b2; }
   .cd-img { max-width: 170px; align-self: center; }
 }
 
+/* Zone pad labels (CSS2D) */
+.zonelabel {
+  pointer-events: none; transform: translate(-50%, -50%); white-space: nowrap;
+  font-size: 11px; color: var(--muted);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 2px 6px;
+}
+
 /* Nameplates (CSS2D) */
 .nameplate {
   pointer-events: none; transform: translate(-50%, -50%); text-align: center;

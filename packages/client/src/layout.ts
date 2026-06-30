@@ -1,4 +1,5 @@
 import { Vector3 } from "three";
+import { Zone } from "@highlander/shared";
 
 export const TABLE_RADIUS = 7;
 export const CARD_W = 0.72;
@@ -127,4 +128,32 @@ export function worldToBattlefield(frame: SeatFrame, world: Vector3): { x: numbe
 
 function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));
+}
+
+/** The non-hand/battlefield zones shown as pads beside each seat, in pad order. */
+export const ZONE_LAYOUT: { zone: Zone; label: string }[] = [
+  { zone: Zone.Library, label: "Library" },
+  { zone: Zone.Graveyard, label: "Graveyard" },
+  { zone: Zone.Exile, label: "Exile" },
+  { zone: Zone.Command, label: "Command" },
+];
+
+/** World position of zone pad `i` (a 2x2 cluster to the seat's right). */
+export function zoneAnchor(frame: SeatFrame, i: number): Vector3 {
+  const col = i % 2;
+  const row = Math.floor(i / 2);
+  return frame.pos
+    .clone()
+    .addScaledVector(frame.right, 2.9 + col * 0.95)
+    .addScaledVector(frame.toCenter, 0.35 + row * 1.2)
+    .setY(0.01);
+}
+
+/** Hit-test a world point against this seat's zone pads (for drag-to-zone). */
+export function zoneAt(frame: SeatFrame, point: { x: number; z: number }, radius = 0.55): Zone | null {
+  for (let i = 0; i < ZONE_LAYOUT.length; i++) {
+    const a = zoneAnchor(frame, i);
+    if (Math.hypot(point.x - a.x, point.z - a.z) < radius) return ZONE_LAYOUT[i]!.zone;
+  }
+  return null;
 }

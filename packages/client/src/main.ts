@@ -1,5 +1,5 @@
 import { Plane, Raycaster, Vector2, Vector3 } from "three";
-import { Zone, toLoadDeck, type GameState, type PlayerId, type SavedDeck } from "@highlander/shared";
+import { Zone, toLoadDeck, type Action, type GameState, type PlayerId, type SavedDeck } from "@highlander/shared";
 import { DEFAULT_GAME_ID, getPlayerId, getSavedName, getUserId, saveName, SERVER_URL } from "./config";
 import { Net } from "./net";
 import { createScene } from "./scene";
@@ -85,6 +85,7 @@ let drag: { id: string; moved: boolean; fromHand: boolean } | null = null;
 let downX = 0;
 let downY = 0;
 let downCardId: string | null = null;
+let downZone: { playerId: string; zone: Zone } | null = null;
 let lastSent = 0;
 
 function setNdc(e: PointerEvent) {
@@ -101,6 +102,15 @@ function pointerOnTable(e: PointerEvent): Vector3 | null {
   raycaster.setFromCamera(ndc, camera);
   return raycaster.ray.intersectPlane(tablePlane, planeHit) ? planeHit.clone() : null;
 }
+function pickZoneAt(e: PointerEvent): { playerId: string; zone: Zone } | null {
+  setNdc(e);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = raycaster.intersectObjects(board.zonePads(), false)[0];
+  if (!hit) return null;
+  const zone = hit.object.userData.zone as Zone | undefined;
+  const playerId = hit.object.userData.playerId as string | undefined;
+  return zone && playerId ? { playerId, zone } : null;
+}
 function openDetailFor(id: string) {
   const card = latest?.cards[id];
   if (!card) return;
@@ -114,6 +124,7 @@ canvas.addEventListener("pointerdown", (e) => {
   downY = e.clientY;
   const id = pickCardId(e);
   downCardId = id;
+  downZone = id ? null : pickZoneAt(e);
   const card = id ? latest.cards[id] : undefined;
   // Draggable: your battlefield permanents (reposition) and your hand cards
   // (drag onto the table to play them). Take the pointer from the camera.
@@ -156,13 +167,17 @@ canvas.addEventListener("pointerup", (e) => {
     }
     if (drag.moved) {
       const p = pointerOnTable(e);
-      const frame = board.frameFor(you);
-      if (p && frame) {
-        const { x, y } = worldToBattlefield(frame, p);
-        // From hand: play it onto the battlefield where it was dropped.
-        // From battlefield: just reposition.
-        if (drag.fromHand) net?.send({ type: "move_card", instanceId: drag.id, toZone: Zone.Battlefield, x, y });
-        else net?.send({ type: "set_card_position", instanceId: drag.id, x, y });
+      if (p) {
+        const zone = board.zoneHitTest(you, p);
+        const frame = board.frameFor(you);
+        if (zone) {
+          // Dropped on a zone pad → send it there.
+          net?.send({ type: "move_card", instanceId: drag.id, toZone: zone });
+        } else if (frame) {
+          const { x, y } = worldToBattlefield(frame, p);
+          if (drag.fromHand) net?.send({ type: "move_card", instanceId: drag.id, toZone: Zone.Battlefield, x, y });
+          else net?.send({ type: "set_card_position", instanceId: drag.id, x, y });
+        }
       }
     } else {
       openDetailFor(drag.id); // a click, not a drag
@@ -170,11 +185,139 @@ canvas.addEventListener("pointerup", (e) => {
     board.setDragging(null);
     drag = null;
     downCardId = null;
+    downZone = null;
     return;
   }
-  // Plain click on a (non-draggable) card → show its detail.
-  if (downCardId && Math.hypot(e.clientX - downX, e.clientY - downY) < 5) openDetailFor(downCardId);
+  // Plain click: a card → detail; a zone pad → its contents.
+  const tap = Math.hypot(e.clientX - downX, e.clientY - downY) < 5;
+  if (tap && downCardId) openDetailFor(downCardId);
+  else if (tap && downZone) openZoneViewer(downZone.playerId, downZone.zone);
   downCardId = null;
+  downZone = null;
+});
+
+/** Modal listing the cards in a zone (Library shown as hidden). */
+function openZoneViewer(playerId: string, zone: Zone) {
+  const player = latest?.players[playerId];
+  if (!player) return;
+  const idsByZone: Record<string, string[]> = {
+    [Zone.Library]: player.library,
+    [Zone.Graveyard]: player.graveyard,
+    [Zone.Exile]: player.exile,
+    [Zone.Command]: player.command,
+  };
+  const labels: Record<string, string> = {
+    [Zone.Library]: "Library",
+    [Zone.Graveyard]: "Graveyard",
+    [Zone.Exile]: "Exile",
+    [Zone.Command]: "Command zone",
+  };
+  const ids = idsByZone[zone] ?? [];
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  const close = () => overlay.remove();
+  overlay.addEventListener("pointerdown", (e) => {
+    if (e.target === overlay) close();
+  });
+  const panel = document.createElement("div");
+  panel.className = "modal";
+  const h = document.createElement("h3");
+  h.textContent = `${labels[zone]} — ${player.name} (${ids.length})`;
+  panel.appendChild(h);
+
+  const list = document.createElement("div");
+  list.className = "modal-list";
+  if (zone === Zone.Library) {
+    const note = document.createElement("div");
+    note.className = "modal-note";
+    note.textContent = "Library is hidden.";
+    list.appendChild(note);
+  } else if (!ids.length) {
+    const note = document.createElement("div");
+    note.className = "modal-note";
+    note.textContent = "Empty.";
+    list.appendChild(note);
+  } else {
+    for (const id of [...ids].reverse()) {
+      const c = latest?.cards[id];
+      const name = (c && !c.hidden && cards.get(c.scryfallId)?.name) || c?.scryfallId || "card";
+      const b = document.createElement("button");
+      b.textContent = name;
+      b.addEventListener("click", () => {
+        close();
+        openDetailFor(id);
+      });
+      list.appendChild(b);
+    }
+  }
+  panel.appendChild(list);
+  const cancel = document.createElement("button");
+  cancel.textContent = "Close";
+  cancel.addEventListener("click", close);
+  panel.appendChild(cancel);
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+}
+
+/** Keyboard shortcuts (active in-game, ignored while typing or in a modal). */
+function openHelp() {
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  const close = () => overlay.remove();
+  overlay.addEventListener("pointerdown", (e) => {
+    if (e.target === overlay) close();
+  });
+  const panel = document.createElement("div");
+  panel.className = "modal";
+  panel.innerHTML =
+    "<h3>Shortcuts &amp; controls</h3>" +
+    '<div class="modal-note"><b>D</b> draw · <b>N</b> next phase · <b>E</b> end turn · <b>S</b> shuffle · <b>U</b> untap all · <b>Esc</b> close card · <b>?</b> this help</div>' +
+    '<div class="modal-note">Drag your battlefield cards to move them. Drag a hand card onto the table to play it. Drop a card on a zone pad (Library / Graveyard / Exile / Command) to send it there. Click any card for a closer look; click a zone pad to view its contents.</div>';
+  const b = document.createElement("button");
+  b.className = "primary";
+  b.textContent = "Got it";
+  b.addEventListener("click", close);
+  panel.appendChild(b);
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
+}
+
+window.addEventListener("keydown", (e) => {
+  if (e.key === "?") {
+    openHelp();
+    return;
+  }
+  if (!net || !latest || latest.status !== "active") return;
+  const tag = (e.target as HTMLElement | null)?.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA") return;
+  if (document.getElementById("deckbuilder") || document.querySelector(".modal-overlay")) return;
+  if (e.key === "Escape") {
+    detail.hide();
+    return;
+  }
+  let action: Action | null = null;
+  switch (e.key.toLowerCase()) {
+    case "d":
+      action = { type: "draw", playerId: you, count: 1 };
+      break;
+    case "n":
+      action = { type: "advance_phase" };
+      break;
+    case "e":
+      action = { type: "end_turn" };
+      break;
+    case "s":
+      action = { type: "shuffle", playerId: you };
+      break;
+    case "u":
+      action = { type: "untap_all", playerId: you };
+      break;
+    default:
+      return;
+  }
+  net.send(action);
+  e.preventDefault();
 });
 
 // --- join flow --------------------------------------------------------------
@@ -257,6 +400,11 @@ joinForm.addEventListener("submit", (e) => {
     onOpenDecks: () => openDeckbuilder(getUserId()),
     onLoadDeck: () => void openDeckPicker(),
   });
+  const keysBtn = document.createElement("button");
+  keysBtn.textContent = "Keys";
+  keysBtn.title = "Keyboard shortcuts";
+  keysBtn.onclick = openHelp;
+  document.getElementById("toolbar")?.appendChild(keysBtn);
 
   net = new Net(
     SERVER_URL,
