@@ -70,3 +70,61 @@ export function gridPositions(
 export function seatYaw(frame: SeatFrame): number {
   return Math.atan2(frame.toCenter.x, frame.toCenter.z) + Math.PI;
 }
+
+export interface CardPlacement {
+  pos: Vector3;
+  /** Per-card yaw (about Y), including the fan angle. */
+  yaw: number;
+}
+
+/**
+ * Hand layout: a compact, slightly fanned single row at the seat's edge, so the
+ * hand stays out of the play space. Cards overlap and lift slightly front-to-
+ * back so the fan reads cleanly from above.
+ */
+export function fanPositions(frame: SeatFrame, count: number): CardPlacement[] {
+  const out: CardPlacement[] = [];
+  if (count <= 0) return out;
+  const baseYaw = seatYaw(frame);
+  const mid = (count - 1) / 2;
+  const spacing = Math.min(CARD_W * 0.62, 3.4 / count); // overlap; cap total width
+  const perAngle = count > 1 ? Math.min(0.08, 0.5 / (count - 1)) : 0;
+  for (let i = 0; i < count; i++) {
+    const off = i - mid;
+    const pos = frame.pos
+      .clone()
+      .addScaledVector(frame.right, off * spacing)
+      .addScaledVector(frame.toCenter, 0.18);
+    pos.y = 0.06 + i * 0.0015;
+    out.push({ pos, yaw: baseYaw + off * perAngle });
+  }
+  return out;
+}
+
+// Per-seat battlefield region, mapping normalized [0..1] positions <-> world.
+const BF_NEAR = 1.3;
+const BF_WIDTH = 5.2;
+const BF_DEPTH = 3.2;
+
+/** Normalized seat-local (x,y) → world point on the table. */
+export function battlefieldPoint(frame: SeatFrame, x: number, y: number): Vector3 {
+  return frame.pos
+    .clone()
+    .addScaledVector(frame.toCenter, BF_NEAR + y * BF_DEPTH)
+    .addScaledVector(frame.right, (x - 0.5) * BF_WIDTH)
+    .setY(0.02);
+}
+
+/** World point → normalized seat-local (x,y), clamped to the region. */
+export function worldToBattlefield(frame: SeatFrame, world: Vector3): { x: number; y: number } {
+  const origin = frame.pos.clone().addScaledVector(frame.toCenter, BF_NEAR);
+  const rel = world.clone().sub(origin);
+  return {
+    x: clamp01(rel.dot(frame.right) / BF_WIDTH + 0.5),
+    y: clamp01(rel.dot(frame.toCenter) / BF_DEPTH),
+  };
+}
+
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v));
+}

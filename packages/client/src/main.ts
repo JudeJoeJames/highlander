@@ -1,12 +1,13 @@
-import { Raycaster, Vector2 } from "three";
-import { toLoadDeck, type GameState, type PlayerId, type SavedDeck } from "@highlander/shared";
+import { Plane, Raycaster, Vector2, Vector3 } from "three";
+import { Zone, toLoadDeck, type GameState, type PlayerId, type SavedDeck } from "@highlander/shared";
 import { DEFAULT_GAME_ID, getPlayerId, getSavedName, getUserId, saveName, SERVER_URL } from "./config";
 import { Net } from "./net";
 import { createScene } from "./scene";
 import { CameraController } from "./camera";
 import { Board } from "./board";
 import { CardLibrary } from "./cards";
-import { cardMenu, chatPanel, statusBar, toolbar } from "./ui";
+import { worldToBattlefield } from "./layout";
+import { cardDetail, chatPanel, statusBar, toolbar } from "./ui";
 import { openDeckbuilder } from "./deckbuilder";
 import { listDecks } from "./api";
 import { testDeck } from "./deck";
@@ -36,7 +37,7 @@ frame();
 
 // --- UI singletons ----------------------------------------------------------
 const status = statusBar();
-const menu = cardMenu((action) => net?.send(action));
+const detail = cardDetail((action) => net?.send(action));
 let net: Net | undefined;
 let chat: ReturnType<typeof chatPanel> | undefined;
 
@@ -74,21 +75,106 @@ function onSnapshot(state: GameState, _you: PlayerId) {
   }
 }
 
-// --- picking ----------------------------------------------------------------
+// --- picking, dragging, and the detail panel --------------------------------
 const raycaster = new Raycaster();
 const ndc = new Vector2();
+const tablePlane = new Plane(new Vector3(0, 1, 0), 0);
+const planeHit = new Vector3();
+
+let drag: { id: string; moved: boolean; fromHand: boolean } | null = null;
+let downX = 0;
+let downY = 0;
+let downCardId: string | null = null;
+let lastSent = 0;
+
+function setNdc(e: PointerEvent) {
+  ndc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+}
+function pickCardId(e: PointerEvent): string | null {
+  setNdc(e);
+  raycaster.setFromCamera(ndc, camera);
+  const hit = raycaster.intersectObjects(board.pickables(), false)[0];
+  return hit ? ((hit.object.userData.instanceId as string) ?? null) : null;
+}
+function pointerOnTable(e: PointerEvent): Vector3 | null {
+  setNdc(e);
+  raycaster.setFromCamera(ndc, camera);
+  return raycaster.ray.intersectPlane(tablePlane, planeHit) ? planeHit.clone() : null;
+}
+function openDetailFor(id: string) {
+  const card = latest?.cards[id];
+  if (!card) return;
+  const resolved = card.scryfallId ? cards.get(card.scryfallId) : undefined;
+  detail.show(card, resolved, card.ownerId === you || card.controllerId === you);
+}
 
 canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0 || !latest) return;
-  ndc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
-  raycaster.setFromCamera(ndc, camera);
-  const hit = raycaster.intersectObjects(board.pickables(), false)[0];
-  if (!hit) return;
-  const id = hit.object.userData.instanceId as string | undefined;
+  downX = e.clientX;
+  downY = e.clientY;
+  const id = pickCardId(e);
+  downCardId = id;
   const card = id ? latest.cards[id] : undefined;
-  if (!card) return;
-  // Manual game: you may act on anything you own or control.
-  if (card.ownerId === you || card.controllerId === you) menu.show(card, e.clientX, e.clientY);
+  // Draggable: your battlefield permanents (reposition) and your hand cards
+  // (drag onto the table to play them). Take the pointer from the camera.
+  const onBf = card?.zone === Zone.Battlefield && card.controllerId === you;
+  const inHand = card?.zone === Zone.Hand && card.ownerId === you;
+  if (card && (onBf || inHand)) {
+    drag = { id: card.instanceId, moved: false, fromHand: !!inHand };
+    board.setDragging(card.instanceId);
+    cameraCtl.controls.enabled = false;
+    canvas.setPointerCapture(e.pointerId);
+  }
+});
+
+canvas.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const p = pointerOnTable(e);
+  if (!p) return;
+  if (!drag.moved && Math.hypot(e.clientX - downX, e.clientY - downY) > 4) drag.moved = true;
+  board.moveMeshLocal(drag.id, { x: p.x, y: 0.06, z: p.z });
+  // Stream position only for battlefield repositions; a hand card isn't on the
+  // battlefield yet, so it just commits once on drop.
+  const now = performance.now();
+  if (drag.moved && !drag.fromHand && now - lastSent > 80) {
+    lastSent = now;
+    const frame = board.frameFor(you);
+    if (frame) {
+      const { x, y } = worldToBattlefield(frame, p);
+      net?.send({ type: "set_card_position", instanceId: drag.id, x, y });
+    }
+  }
+});
+
+canvas.addEventListener("pointerup", (e) => {
+  if (drag) {
+    cameraCtl.controls.enabled = true;
+    try {
+      canvas.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+    if (drag.moved) {
+      const p = pointerOnTable(e);
+      const frame = board.frameFor(you);
+      if (p && frame) {
+        const { x, y } = worldToBattlefield(frame, p);
+        // From hand: play it onto the battlefield where it was dropped.
+        // From battlefield: just reposition.
+        if (drag.fromHand) net?.send({ type: "move_card", instanceId: drag.id, toZone: Zone.Battlefield, x, y });
+        else net?.send({ type: "set_card_position", instanceId: drag.id, x, y });
+      }
+    } else {
+      openDetailFor(drag.id); // a click, not a drag
+    }
+    board.setDragging(null);
+    drag = null;
+    downCardId = null;
+    return;
+  }
+  // Plain click on a (non-draggable) card → show its detail.
+  if (downCardId && Math.hypot(e.clientX - downX, e.clientY - downY) < 5) openDetailFor(downCardId);
+  downCardId = null;
 });
 
 // --- join flow --------------------------------------------------------------

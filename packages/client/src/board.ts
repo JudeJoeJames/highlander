@@ -14,7 +14,7 @@ import {
   type PlayerId,
   type PlayerState,
 } from "@highlander/shared";
-import { CARD_H, CARD_W, gridPositions, seatFrames, seatYaw, type SeatFrame } from "./layout";
+import { battlefieldPoint, CARD_H, CARD_W, fanPositions, gridPositions, seatFrames, seatYaw, type SeatFrame } from "./layout";
 import { backTexture, imageCardTexture, placeholderTexture } from "./textures";
 import type { CardLibrary } from "./cards";
 
@@ -35,6 +35,8 @@ export class Board {
   private readonly cards = new Map<string, CardObject>();
   private readonly nameplates = new Map<string, { obj: CSS2DObject; el: HTMLDivElement }>();
   private frames: SeatFrame[] = [];
+  /** While set, this card is being dragged locally and is not re-laid by update(). */
+  private draggingId: string | null = null;
 
   constructor(
     private readonly scene: Scene,
@@ -74,17 +76,42 @@ export class Board {
   private layoutSeat(state: GameState, frame: SeatFrame, player: PlayerState, live: Set<string>): void {
     const yaw = seatYaw(frame);
 
-    // Hand: a single row at the seat's outer edge.
+    // Hand: fanned single line at the seat's outer edge.
     const hand = player.hand.map((id) => state.cards[id]).filter(Boolean) as CardInstance[];
-    const handPos = gridPositions(frame, hand.length, 0.0, 8);
-    hand.forEach((card, i) => this.placeCard(card, handPos[i]!, yaw, live));
+    const fan = fanPositions(frame, hand.length);
+    hand.forEach((card, i) => {
+      if (card.instanceId === this.draggingId) {
+        live.add(card.instanceId); // being dragged out of hand; leave its slot
+        return;
+      }
+      this.placeCard(card, fan[i]!.pos, fan[i]!.yaw, live);
+    });
 
-    // Battlefield: cards this player controls, gridded in front of the seat.
+    // Battlefield: cards this player controls. Honor a dragged position (x/y),
+    // otherwise auto-arrange in a grid.
     const bf = state.battlefield
       .map((id) => state.cards[id])
       .filter((c): c is CardInstance => !!c && c.controllerId === player.id);
-    const bfPos = gridPositions(frame, bf.length, 1.6, 7);
-    bf.forEach((card, i) => this.placeCard(card, bfPos[i]!, yaw, live));
+    const grid = gridPositions(frame, bf.length, 1.6, 7);
+    bf.forEach((card, i) => {
+      if (card.instanceId === this.draggingId) {
+        live.add(card.instanceId); // keep it; its mesh is positioned by the drag
+        return;
+      }
+      const pos = card.x !== undefined && card.y !== undefined ? battlefieldPoint(frame, card.x, card.y) : grid[i]!;
+      this.placeCard(card, pos, yaw, live);
+    });
+  }
+
+  /** Mark a card as actively dragged (skipped by update so it doesn't snap back). */
+  setDragging(id: string | null): void {
+    this.draggingId = id;
+  }
+
+  /** Immediately move a card's mesh to a world position (used during dragging). */
+  moveMeshLocal(id: string, p: { x: number; y: number; z: number }): void {
+    const obj = this.cards.get(id);
+    if (obj) obj.group.position.set(p.x, p.y, p.z);
   }
 
   private placeCard(card: CardInstance, pos: { x: number; y: number; z: number }, yaw: number, live: Set<string>): void {

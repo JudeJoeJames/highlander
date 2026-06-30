@@ -1,4 +1,4 @@
-import { Zone, type Action, type CardInstance, type GameState, type PlayerId } from "@highlander/shared";
+import { Zone, type Action, type CardInstance, type GameState, type PlayerId, type ResolvedCard } from "@highlander/shared";
 
 type Send = (action: Action) => void;
 
@@ -54,52 +54,87 @@ export function toolbar(send: Send, you: PlayerId, actions: ToolbarActions) {
   btn("End turn", () => send({ type: "end_turn" }));
 }
 
-/** Floating action menu for a single card (the manual interaction surface). */
-export function cardMenu(send: Send) {
-  const el = document.getElementById("cardmenu")!;
+/**
+ * Closer-look panel for a card: large image + type/oracle text, plus the manual
+ * actions you can take on it (when you own or control it). Replaces the old tiny
+ * action menu — one click now both shows the card and offers its actions.
+ */
+export function cardDetail(send: Send) {
+  const el = document.createElement("div");
+  el.id = "carddetail";
+  el.className = "hidden";
+  document.body.appendChild(el);
 
   const hide = () => el.classList.add("hidden");
   document.addEventListener("pointerdown", (e) => {
-    if (!el.contains(e.target as Node)) hide();
+    if (!el.classList.contains("hidden") && !el.contains(e.target as Node)) hide();
   });
 
-  function show(card: CardInstance, screenX: number, screenY: number) {
+  const div = (cls: string, text: string) => {
+    const d = document.createElement("div");
+    d.className = cls;
+    d.textContent = text;
+    return d;
+  };
+
+  function show(card: CardInstance, resolved: ResolvedCard | undefined, canAct: boolean) {
     el.innerHTML = "";
-    const title = document.createElement("div");
-    title.className = "title";
-    title.textContent = card.hidden ? "(hidden card)" : card.scryfallId || "card";
-    el.appendChild(title);
+    const close = document.createElement("button");
+    close.className = "cd-close";
+    close.textContent = "✕";
+    close.onclick = hide;
+    el.appendChild(close);
 
-    const act = (label: string, action: Action, cls = "") => {
-      const b = document.createElement("button");
-      b.textContent = label;
-      if (cls) b.className = cls;
-      b.onclick = () => {
-        send(action);
-        hide();
-      };
-      el.appendChild(b);
-    };
-
-    const id = card.instanceId;
-    if (card.zone !== Zone.Battlefield) act("To battlefield", { type: "move_card", instanceId: id, toZone: Zone.Battlefield });
-    if (card.zone === Zone.Battlefield) act(card.tapped ? "Untap" : "Tap", { type: "set_tapped", instanceId: id, tapped: !card.tapped });
-    act("To hand", { type: "move_card", instanceId: id, toZone: Zone.Hand });
-    act("To graveyard", { type: "move_card", instanceId: id, toZone: Zone.Graveyard });
-    act("To exile", { type: "move_card", instanceId: id, toZone: Zone.Exile });
-    act("To library top", { type: "move_card", instanceId: id, toZone: Zone.Library, index: 0 });
-    if (card.zone === Zone.Battlefield) {
-      act("+1/+1", { type: "adjust_card_counter", instanceId: id, key: "+1/+1", delta: 1 });
-      act("−1/+1", { type: "adjust_card_counter", instanceId: id, key: "+1/+1", delta: -1 });
+    if (card.hidden) {
+      el.appendChild(div("cd-name", "Hidden card"));
+      el.classList.remove("hidden");
+      return;
     }
 
+    const img = resolved?.imageNormal ?? resolved?.imageSmall;
+    if (img) {
+      const im = document.createElement("img");
+      im.className = "cd-img";
+      im.src = img;
+      im.alt = resolved?.name ?? "";
+      el.appendChild(im);
+    }
+
+    const info = document.createElement("div");
+    info.className = "cd-info";
+    info.appendChild(div("cd-name", resolved?.name ?? card.scryfallId));
+    const sub = [resolved?.typeLine, resolved?.manaCost].filter(Boolean).join("   ");
+    if (sub) info.appendChild(div("cd-type", sub));
+    if (resolved?.oracleText) info.appendChild(div("cd-oracle", resolved.oracleText));
+    el.appendChild(info);
+
+    if (canAct) {
+      const actions = document.createElement("div");
+      actions.className = "cd-actions";
+      const act = (label: string, action: Action, closeAfter = true) => {
+        const b = document.createElement("button");
+        b.textContent = label;
+        b.onclick = () => {
+          send(action);
+          if (closeAfter) hide();
+        };
+        actions.appendChild(b);
+      };
+      const id = card.instanceId;
+      const onBf = card.zone === Zone.Battlefield;
+      if (!onBf) act("To battlefield", { type: "move_card", instanceId: id, toZone: Zone.Battlefield });
+      if (onBf) act(card.tapped ? "Untap" : "Tap", { type: "set_tapped", instanceId: id, tapped: !card.tapped }, false);
+      act("Hand", { type: "move_card", instanceId: id, toZone: Zone.Hand });
+      act("Graveyard", { type: "move_card", instanceId: id, toZone: Zone.Graveyard });
+      act("Exile", { type: "move_card", instanceId: id, toZone: Zone.Exile });
+      act("Library top", { type: "move_card", instanceId: id, toZone: Zone.Library, index: 0 });
+      if (onBf) {
+        act("+1/+1", { type: "adjust_card_counter", instanceId: id, key: "+1/+1", delta: 1 }, false);
+        act("−1/+1", { type: "adjust_card_counter", instanceId: id, key: "+1/+1", delta: -1 }, false);
+      }
+      el.appendChild(actions);
+    }
     el.classList.remove("hidden");
-    // Clamp to viewport.
-    const rect = el.getBoundingClientRect();
-    const x = Math.min(screenX, window.innerWidth - rect.width - 8);
-    const y = Math.min(screenY, window.innerHeight - rect.height - 8);
-    el.style.left = `${Math.max(8, x)}px`;
-    el.style.top = `${Math.max(8, y)}px`;
   }
 
   return { show, hide };
