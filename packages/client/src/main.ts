@@ -7,7 +7,7 @@ import { CameraController } from "./camera";
 import { Board } from "./board";
 import { CardLibrary } from "./cards";
 import { worldToBattlefield } from "./layout";
-import { cardDetail, chatPanel, statusBar, toolbar } from "./ui";
+import { cardDetail, chatPanel, phaseStrip, statusBar, toolbar } from "./ui";
 import { openDeckbuilder } from "./deckbuilder";
 import { listDecks } from "./api";
 import { testDeck } from "./deck";
@@ -24,7 +24,7 @@ const cameraCtl = new CameraController(camera, renderer.domElement);
 const cards = new CardLibrary("/api", () => {
   if (latest) board.update(latest, you);
 });
-const board = new Board(scene, cards);
+const board = new Board(scene, cards, (playerId, delta) => net?.send({ type: "adjust_life", playerId, delta }));
 window.addEventListener("resize", resize);
 
 function frame() {
@@ -37,7 +37,9 @@ frame();
 
 // --- UI singletons ----------------------------------------------------------
 const status = statusBar();
+const phases = phaseStrip((action) => net?.send(action));
 const detail = cardDetail((action) => net?.send(action));
+const selection = new Set<string>();
 let net: Net | undefined;
 let chat: ReturnType<typeof chatPanel> | undefined;
 
@@ -57,8 +59,20 @@ function onSnapshot(state: GameState, _you: PlayerId) {
   }
   cards.ensure(visible);
 
+  // Drop from the selection anything that's no longer your battlefield card.
+  let selChanged = false;
+  for (const id of [...selection]) {
+    const c = state.cards[id];
+    if (!c || c.zone !== Zone.Battlefield || c.controllerId !== you) {
+      selection.delete(id);
+      selChanged = true;
+    }
+  }
+
   board.update(state, you);
+  if (selChanged) board.setSelection(selection);
   status.setTurn(state);
+  phases.update(state);
 
   // Stream new game-log entries into chat as system messages.
   for (const entry of state.log) {
@@ -81,7 +95,9 @@ const ndc = new Vector2();
 const tablePlane = new Plane(new Vector3(0, 1, 0), 0);
 const planeHit = new Vector3();
 
-let drag: { id: string; moved: boolean; fromHand: boolean } | null = null;
+let drag:
+  | { ids: string[]; moved: boolean; fromHand: boolean; start: Map<string, { x: number; z: number }>; px: number; pz: number }
+  | null = null;
 let downX = 0;
 let downY = 0;
 let downCardId: string | null = null;
@@ -102,6 +118,12 @@ function pointerOnTable(e: PointerEvent): Vector3 | null {
   raycaster.setFromCamera(ndc, camera);
   return raycaster.ray.intersectPlane(tablePlane, planeHit) ? planeHit.clone() : null;
 }
+/** World point → normalized battlefield (x,y) for the local seat. */
+function bfCoords(wx: number, wz: number): { x: number; y: number } | null {
+  const frame = board.frameFor(you);
+  if (!frame) return null;
+  return worldToBattlefield(frame, new Vector3(wx, 0, wz));
+}
 function pickZoneAt(e: PointerEvent): { playerId: string; zone: Zone } | null {
   setNdc(e);
   raycaster.setFromCamera(ndc, camera);
@@ -118,6 +140,27 @@ function openDetailFor(id: string) {
   detail.show(card, resolved, card.ownerId === you || card.controllerId === you);
 }
 
+function setSelection(ids: Iterable<string>) {
+  selection.clear();
+  for (const id of ids) selection.add(id);
+  board.setSelection(selection);
+}
+
+/** Handle a tap (no drag): shift-click toggles selection; a plain click opens detail. */
+function handleTap(cardId: string, shift: boolean) {
+  const c = latest?.cards[cardId];
+  if (!c) return;
+  const selectable = c.zone === Zone.Battlefield && c.controllerId === you;
+  if (shift && selectable) {
+    if (selection.has(cardId)) selection.delete(cardId);
+    else selection.add(cardId);
+    board.setSelection(selection);
+  } else {
+    if (selection.size) setSelection([]);
+    openDetailFor(cardId);
+  }
+}
+
 canvas.addEventListener("pointerdown", (e) => {
   if (e.button !== 0 || !latest) return;
   downX = e.clientX;
@@ -126,16 +169,25 @@ canvas.addEventListener("pointerdown", (e) => {
   downCardId = id;
   downZone = id ? null : pickZoneAt(e);
   const card = id ? latest.cards[id] : undefined;
-  // Draggable: your battlefield permanents (reposition) and your hand cards
-  // (drag onto the table to play them). Take the pointer from the camera.
+
+  // Draggable: your battlefield permanents (reposition, possibly as a group)
+  // and your hand cards (drag onto the table to play). Take the pointer.
   const onBf = card?.zone === Zone.Battlefield && card.controllerId === you;
   const inHand = card?.zone === Zone.Hand && card.ownerId === you;
-  if (card && (onBf || inHand)) {
-    drag = { id: card.instanceId, moved: false, fromHand: !!inHand };
-    board.setDragging(card.instanceId);
-    cameraCtl.controls.enabled = false;
-    canvas.setPointerCapture(e.pointerId);
+  if (!card || (!onBf && !inHand)) return;
+
+  // If dragging a selected permanent, move the whole selection together.
+  const ids = onBf && selection.has(card.instanceId) ? [...selection] : [card.instanceId];
+  const start = new Map<string, { x: number; z: number }>();
+  for (const dragId of ids) {
+    const wp = board.meshWorldPos(dragId);
+    if (wp) start.set(dragId, { x: wp.x, z: wp.z });
   }
+  const p0 = pointerOnTable(e);
+  drag = { ids, moved: false, fromHand: !!inHand, start, px: p0?.x ?? 0, pz: p0?.z ?? 0 };
+  board.setDragging(ids);
+  cameraCtl.controls.enabled = false;
+  canvas.setPointerCapture(e.pointerId);
 });
 
 canvas.addEventListener("pointermove", (e) => {
@@ -143,16 +195,18 @@ canvas.addEventListener("pointermove", (e) => {
   const p = pointerOnTable(e);
   if (!p) return;
   if (!drag.moved && Math.hypot(e.clientX - downX, e.clientY - downY) > 4) drag.moved = true;
-  board.moveMeshLocal(drag.id, { x: p.x, y: 0.06, z: p.z });
-  // Stream position only for battlefield repositions; a hand card isn't on the
-  // battlefield yet, so it just commits once on drop.
+  const dx = p.x - drag.px;
+  const dz = p.z - drag.pz;
+  // Lift dragged cards above the rest of the table so they read as "picked up".
+  for (const [id, s] of drag.start) board.moveMeshLocal(id, { x: s.x + dx, y: 0.5, z: s.z + dz });
+
+  // Stream battlefield repositions live (hand cards commit once on drop).
   const now = performance.now();
   if (drag.moved && !drag.fromHand && now - lastSent > 80) {
     lastSent = now;
-    const frame = board.frameFor(you);
-    if (frame) {
-      const { x, y } = worldToBattlefield(frame, p);
-      net?.send({ type: "set_card_position", instanceId: drag.id, x, y });
+    for (const [id, s] of drag.start) {
+      const c = bfCoords(s.x + dx, s.z + dz);
+      if (c) net?.send({ type: "set_card_position", instanceId: id, x: c.x, y: c.y });
     }
   }
 });
@@ -167,20 +221,21 @@ canvas.addEventListener("pointerup", (e) => {
     }
     if (drag.moved) {
       const p = pointerOnTable(e);
-      if (p) {
-        const zone = board.zoneHitTest(you, p);
-        const frame = board.frameFor(you);
+      const zone = p ? board.zoneHitTest(you, p) : null;
+      const dx = p ? p.x - drag.px : 0;
+      const dz = p ? p.z - drag.pz : 0;
+      for (const [id, s] of drag.start) {
         if (zone) {
-          // Dropped on a zone pad → send it there.
-          net?.send({ type: "move_card", instanceId: drag.id, toZone: zone });
-        } else if (frame) {
-          const { x, y } = worldToBattlefield(frame, p);
-          if (drag.fromHand) net?.send({ type: "move_card", instanceId: drag.id, toZone: Zone.Battlefield, x, y });
-          else net?.send({ type: "set_card_position", instanceId: drag.id, x, y });
+          net?.send({ type: "move_card", instanceId: id, toZone: zone });
+        } else {
+          const c = bfCoords(s.x + dx, s.z + dz);
+          if (!c) continue;
+          if (drag.fromHand) net?.send({ type: "move_card", instanceId: id, toZone: Zone.Battlefield, x: c.x, y: c.y });
+          else net?.send({ type: "set_card_position", instanceId: id, x: c.x, y: c.y });
         }
       }
     } else {
-      openDetailFor(drag.id); // a click, not a drag
+      handleTap(downCardId ?? drag.ids[0]!, e.shiftKey);
     }
     board.setDragging(null);
     drag = null;
@@ -188,10 +243,11 @@ canvas.addEventListener("pointerup", (e) => {
     downZone = null;
     return;
   }
-  // Plain click: a card → detail; a zone pad → its contents.
+  // Plain click: card → detail/select; zone pad → contents; empty → clear selection.
   const tap = Math.hypot(e.clientX - downX, e.clientY - downY) < 5;
-  if (tap && downCardId) openDetailFor(downCardId);
+  if (tap && downCardId) handleTap(downCardId, e.shiftKey);
   else if (tap && downZone) openZoneViewer(downZone.playerId, downZone.zone);
+  else if (tap) setSelection([]);
   downCardId = null;
   downZone = null;
 });
@@ -272,8 +328,9 @@ function openHelp() {
   panel.className = "modal";
   panel.innerHTML =
     "<h3>Shortcuts &amp; controls</h3>" +
-    '<div class="modal-note"><b>D</b> draw · <b>N</b> next phase · <b>E</b> end turn · <b>S</b> shuffle · <b>U</b> untap all · <b>Esc</b> close card · <b>?</b> this help</div>' +
-    '<div class="modal-note">Drag your battlefield cards to move them. Drag a hand card onto the table to play it. Drop a card on a zone pad (Library / Graveyard / Exile / Command) to send it there. Click any card for a closer look; click a zone pad to view its contents.</div>';
+    '<div class="modal-note"><b>D</b> draw · <b>N</b> next phase · <b>E</b> end turn · <b>S</b> shuffle · <b>U</b> untap all · <b>T</b> tap/untap selection · <b>Esc</b> clear · <b>?</b> this help</div>' +
+    '<div class="modal-note">Drag your battlefield cards to move them (snaps to a grid). Drag a hand card onto the table to play it. Drop a card on a zone pad (Library / Graveyard / Exile / Command) to send it there. Shift-click permanents to multi-select, then drag or press T together. Click any card for a closer look; click a zone pad to view its contents.</div>' +
+    '<div class="modal-note">Left-drag pans · right-drag tilts · scroll zooms.</div>';
   const b = document.createElement("button");
   b.className = "primary";
   b.textContent = "Got it";
@@ -294,6 +351,15 @@ window.addEventListener("keydown", (e) => {
   if (document.getElementById("deckbuilder") || document.querySelector(".modal-overlay")) return;
   if (e.key === "Escape") {
     detail.hide();
+    if (selection.size) setSelection([]);
+    return;
+  }
+  // T taps/untaps the whole selection (untaps only if all are tapped).
+  if (e.key.toLowerCase() === "t" && selection.size) {
+    const sel = [...selection].map((id) => latest!.cards[id]).filter(Boolean) as GameState["cards"][string][];
+    const target = sel.some((c) => !c.tapped);
+    for (const c of sel) net.send({ type: "set_tapped", instanceId: c.instanceId, tapped: target });
+    e.preventDefault();
     return;
   }
   let action: Action | null = null;

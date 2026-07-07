@@ -31,7 +31,7 @@ export function createScene(canvas: HTMLCanvasElement, labelHost: HTMLElement): 
   scene.background = new Color("#0e1116");
 
   const camera = new PerspectiveCamera(50, 1, 0.1, 100);
-  camera.position.set(0, 11, 13);
+  camera.position.set(0, 16, 0.02); // start top-down
   camera.lookAt(0, 0, 0);
 
   scene.add(new AmbientLight(0xffffff, 0.85));

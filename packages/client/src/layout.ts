@@ -88,15 +88,15 @@ export function fanPositions(frame: SeatFrame, count: number): CardPlacement[] {
   if (count <= 0) return out;
   const baseYaw = seatYaw(frame);
   const mid = (count - 1) / 2;
-  const spacing = Math.min(CARD_W * 0.62, 3.4 / count); // overlap; cap total width
-  const perAngle = count > 1 ? Math.min(0.08, 0.5 / (count - 1)) : 0;
+  const spacing = Math.min(CARD_W * 0.85, 4.6 / count); // light overlap; cap total width
+  const perAngle = count > 1 ? Math.min(0.07, 0.45 / (count - 1)) : 0;
   for (let i = 0; i < count; i++) {
     const off = i - mid;
     const pos = frame.pos
       .clone()
       .addScaledVector(frame.right, off * spacing)
       .addScaledVector(frame.toCenter, 0.18);
-    pos.y = 0.06 + i * 0.0015;
+    pos.y = 0.08 + i * 0.01; // stack front-to-back so overlaps don't z-fight
     out.push({ pos, yaw: baseYaw + off * perAngle });
   }
   return out;

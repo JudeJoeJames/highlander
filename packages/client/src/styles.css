@@ -95,6 +95,19 @@ button.danger { border-color: var(--danger); color: #f0b4b2; }
 .nameplate.active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(215,161,59,0.35); }
 .nameplate.you .name::after { content: " (you)"; color: var(--muted); font-weight: 400; font-size: 11px; }
 .nameplate.disconnected { opacity: 0.5; }
+.nameplate .life-row { display: flex; align-items: center; justify-content: center; gap: 3px; margin-top: 2px; }
+.life-btn { pointer-events: auto; padding: 1px 6px; font-size: 12px; line-height: 1.4; border-radius: 6px; }
+
+/* Turn / phase strip */
+#phasestrip {
+  position: absolute; top: 46px; left: 50%; transform: translateX(-50%); z-index: 5;
+  display: flex; gap: 4px; align-items: center; max-width: 96vw; overflow-x: auto;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 4px 6px;
+}
+.ps-turn { font-size: 12px; color: var(--muted); padding: 0 6px; white-space: nowrap; }
+.ps-cell { font-size: 12px; padding: 5px 9px; background: transparent; border: 1px solid transparent; border-radius: 7px; color: var(--muted); white-space: nowrap; }
+.ps-cell:hover { border-color: var(--border); }
+.ps-cell.active { background: var(--accent); color: #1a1205; font-weight: 600; }
 
 /* Chat */
 #chat {

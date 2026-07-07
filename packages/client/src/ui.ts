@@ -1,4 +1,4 @@
-import { Zone, type Action, type CardInstance, type GameState, type PlayerId, type ResolvedCard } from "@highlander/shared";
+import { Phase, Zone, type Action, type CardInstance, type GameState, type PlayerId, type ResolvedCard } from "@highlander/shared";
 
 type Send = (action: Action) => void;
 
@@ -22,6 +22,47 @@ export function statusBar() {
       }
       const active = state.turn.activePlayerId ? state.players[state.turn.activePlayerId]?.name : "?";
       turninfo.textContent = `T${state.turn.turnNumber} · ${active} · ${state.turn.phase}`;
+    },
+  };
+}
+
+/** Turn/phase strip: shows the turn + active player and highlights the phase.
+ *  Clicking a cell jumps to that phase (set_phase). */
+export function phaseStrip(send: Send) {
+  const host = document.getElementById("phasestrip")!;
+  const cells: { label: string; phases: Phase[] }[] = [
+    { label: "Untap", phases: [Phase.Untap] },
+    { label: "Upkeep", phases: [Phase.Upkeep] },
+    { label: "Draw", phases: [Phase.Draw] },
+    { label: "Main 1", phases: [Phase.PrecombatMain] },
+    { label: "Combat", phases: [Phase.BeginCombat, Phase.DeclareAttackers, Phase.DeclareBlockers, Phase.CombatDamage, Phase.EndCombat] },
+    { label: "Main 2", phases: [Phase.PostcombatMain] },
+    { label: "End", phases: [Phase.End, Phase.Cleanup] },
+  ];
+
+  host.innerHTML = "";
+  const turnEl = document.createElement("div");
+  turnEl.className = "ps-turn";
+  host.appendChild(turnEl);
+  const cellEls = cells.map((c) => {
+    const b = document.createElement("button");
+    b.className = "ps-cell";
+    b.textContent = c.label;
+    b.onclick = () => send({ type: "set_phase", phase: c.phases[0]! });
+    host.appendChild(b);
+    return b;
+  });
+
+  return {
+    update(state: GameState) {
+      if (state.status !== "active") {
+        host.classList.add("hidden");
+        return;
+      }
+      host.classList.remove("hidden");
+      const active = state.turn.activePlayerId ? (state.players[state.turn.activePlayerId]?.name ?? "?") : "?";
+      turnEl.textContent = `Turn ${state.turn.turnNumber} · ${active}`;
+      cells.forEach((c, i) => cellEls[i]!.classList.toggle("active", c.phases.includes(state.turn.phase)));
     },
   };
 }

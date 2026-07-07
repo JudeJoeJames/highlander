@@ -48,14 +48,17 @@ export class Board {
   private readonly cards = new Map<string, CardObject>();
   private readonly nameplates = new Map<string, { obj: CSS2DObject; el: HTMLDivElement }>();
   private frames: SeatFrame[] = [];
-  /** While set, this card is being dragged locally and is not re-laid by update(). */
-  private draggingId: string | null = null;
+  /** These cards are being dragged locally and are not re-laid by update(). */
+  private draggingIds = new Set<string>();
+  /** Currently multi-selected cards (highlighted). */
+  private selection = new Set<string>();
   private readonly zonePadMeshes = new Map<string, Mesh>();
   private readonly zoneLabels = new Map<string, { obj: CSS2DObject; el: HTMLDivElement }>();
 
   constructor(
     private readonly scene: Scene,
     private readonly library: CardLibrary,
+    private readonly onLife: (playerId: PlayerId, delta: number) => void,
   ) {}
 
   /** Current seat frames (used by the camera to focus a seat). */
@@ -96,7 +99,7 @@ export class Board {
     const hand = player.hand.map((id) => state.cards[id]).filter(Boolean) as CardInstance[];
     const fan = fanPositions(frame, hand.length);
     hand.forEach((card, i) => {
-      if (card.instanceId === this.draggingId) {
+      if (this.draggingIds.has(card.instanceId)) {
         live.add(card.instanceId); // being dragged out of hand; leave its slot
         return;
       }
@@ -110,24 +113,43 @@ export class Board {
       .filter((c): c is CardInstance => !!c && c.controllerId === player.id);
     const grid = gridPositions(frame, bf.length, 1.6, 7);
     bf.forEach((card, i) => {
-      if (card.instanceId === this.draggingId) {
+      if (this.draggingIds.has(card.instanceId)) {
         live.add(card.instanceId); // keep it; its mesh is positioned by the drag
         return;
       }
       const pos = card.x !== undefined && card.y !== undefined ? battlefieldPoint(frame, card.x, card.y) : grid[i]!;
+      pos.y = 0.02 + i * 0.008; // layer by order so overlapping cards don't z-fight
       this.placeCard(card, pos, yaw, live);
     });
   }
 
-  /** Mark a card as actively dragged (skipped by update so it doesn't snap back). */
-  setDragging(id: string | null): void {
-    this.draggingId = id;
+  /** Mark cards as actively dragged (skipped by update so they don't snap back). */
+  setDragging(ids: Iterable<string> | null): void {
+    this.draggingIds = new Set(ids ?? []);
   }
 
   /** Immediately move a card's mesh to a world position (used during dragging). */
   moveMeshLocal(id: string, p: { x: number; y: number; z: number }): void {
     const obj = this.cards.get(id);
     if (obj) obj.group.position.set(p.x, p.y, p.z);
+  }
+
+  /** Current world position of a card's mesh (for group-drag offsets). */
+  meshWorldPos(id: string): { x: number; y: number; z: number } | null {
+    const obj = this.cards.get(id);
+    return obj ? { x: obj.group.position.x, y: obj.group.position.y, z: obj.group.position.z } : null;
+  }
+
+  /** Replace the highlighted selection and repaint highlights. */
+  setSelection(ids: Iterable<string>): void {
+    this.selection = new Set(ids);
+    for (const [id, obj] of this.cards) this.applyHighlight(obj, this.selection.has(id));
+  }
+
+  private applyHighlight(obj: CardObject, on: boolean): void {
+    const mat = obj.mesh.material as MeshStandardMaterial;
+    mat.emissive.setHex(on ? 0x2f6fb0 : 0x000000);
+    mat.emissiveIntensity = on ? 0.6 : 1;
   }
 
   /** Pad meshes (carry userData {playerId, zone}) for click/hit testing. */
@@ -230,6 +252,7 @@ export class Board {
     const mat = obj.mesh.material as MeshStandardMaterial;
     mat.map = this.faceTexture(card);
     mat.needsUpdate = true;
+    this.applyHighlight(obj, this.selection.has(card.instanceId));
   }
 
   private faceTexture(card: CardInstance) {
@@ -270,9 +293,19 @@ export class Board {
 
     entry.el.innerHTML = `
       <div class="name">${escapeHtml(player.name)}</div>
-      <div class="life">♥ ${player.life}</div>
+      <div class="life-row">
+        <button class="life-btn" data-delta="-5">−5</button>
+        <button class="life-btn" data-delta="-1">−</button>
+        <span class="life">♥ ${player.life}</span>
+        <button class="life-btn" data-delta="1">+</button>
+        <button class="life-btn" data-delta="5">+5</button>
+      </div>
       <div class="zones">H ${player.hand.length} · L ${player.library.length} · G ${player.graveyard.length} · E ${player.exile.length} · C ${player.command.length}</div>
       ${mana ? `<div class="mana">${escapeHtml(mana)}</div>` : ""}`;
+
+    for (const btn of entry.el.querySelectorAll<HTMLButtonElement>(".life-btn")) {
+      btn.onclick = () => this.onLife(player.id, Number(btn.dataset.delta));
+    }
   }
 }
 

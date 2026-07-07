@@ -1,5 +1,5 @@
 import type { PerspectiveCamera } from "three";
-import { Vector3 } from "three";
+import { MOUSE, TOUCH, Vector3 } from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import type { SeatFrame } from "./layout";
 
@@ -32,6 +32,10 @@ export class CameraController {
     this.controls.minDistance = 4;
     this.controls.maxDistance = 26;
 
+    // Left-drag pans the table; right-drag tilts/orbits (swapped from defaults).
+    this.controls.mouseButtons = { LEFT: MOUSE.PAN, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.ROTATE };
+    this.controls.touches = { ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_ROTATE };
+
     this.controls.addEventListener("start", () => {
       this.dragging = true;
       this.lastUserInteract = this.now();
@@ -44,13 +48,14 @@ export class CameraController {
 
   /** Request the camera to frame a seat. Honored once the cooldown elapses. */
   focusSeat(frame: SeatFrame): void {
-    // Sit behind the seat, looking across its battlefield toward the center.
-    const target = frame.pos.clone().addScaledVector(frame.toCenter, 2.4);
+    // High, mostly top-down view centered on the active player's area, with a
+    // slight tilt from behind the seat.
+    const target = frame.pos.clone().addScaledVector(frame.toCenter, 2.2);
     target.y = 0;
     const pos = frame.pos
       .clone()
-      .addScaledVector(frame.toCenter, -3.2) // behind the player
-      .add(new Vector3(0, 8.5, 0));
+      .addScaledVector(frame.toCenter, -1.0)
+      .add(new Vector3(0, 12.5, 0));
     this.desiredPos = pos;
     this.desiredTarget = target;
   }
