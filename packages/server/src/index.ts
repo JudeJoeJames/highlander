@@ -200,8 +200,8 @@ wss.on("connection", (ws: WebSocket, req) => {
   });
 });
 
-http.listen(PORT, () => {
-  console.log(`Highlander server listening on http://localhost:${PORT}`);
+http.listen(PORT, "0.0.0.0", () => {
+  console.log(`Highlander server listening on http://0.0.0.0:${PORT}`);
   console.log(serveClient ? `Serving client from ${CLIENT_DIST}` : "Client build not found — run the Vite dev server, or `npm start` to build it.");
   console.log(`WebSocket: ws://localhost:${PORT}/ws/<gameId>`);
 });

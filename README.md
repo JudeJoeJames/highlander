@@ -109,6 +109,26 @@ active player but yields to you for ~6s after you pan/zoom.
 > If the client can't reach the server, pass `?server=ws://localhost:8787` (and
 > optionally `?game=my-table`) in the client URL.
 
+## Deploying (Railway / any container host)
+
+The repo ships a **Dockerfile** that builds the client and runs the single-
+process server (client + `/api` + `/ws` on `$PORT`). This is the supported
+deploy path — it avoids the two common pitfalls: hosts defaulting to the Vite
+*dev* server, and production installs pruning the devDependencies (`vite`,
+`tsx`) that the build/run actually need.
+
+On Railway:
+- It auto-detects the Dockerfile — no build/start command needed. **Clear any
+  custom Start Command** on the service (e.g. a leftover `npm run dev`) so the
+  Dockerfile's `CMD` is used.
+- Railway injects `PORT`; the server reads it and binds `0.0.0.0`.
+- The client connects same-origin (`wss://<domain>/ws/...`), so nothing is
+  hardcoded to localhost.
+
+Note: saved decks are written to `packages/server/data/` on the container's
+ephemeral filesystem, so they won't survive redeploys yet. Attach a Railway
+volume at that path (or move decks to a database) for durable storage.
+
 ## Roadmap (next milestones)
 
 - [x] **Client board**: Three.js 4-seat layout (responsive desktop/mobile),
