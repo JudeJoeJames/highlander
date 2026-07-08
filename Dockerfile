@@ -19,6 +19,8 @@ COPY . .
 RUN npm run build:client
 
 # The server reads $PORT (Railway sets it) and serves the built client + /api + /ws.
+# EXPOSE must match the port Railway routes to, or its proxy returns 502. Railway
+# injects PORT=8080; the server listens there. (Locally, PORT is unset -> 8787.)
 ENV NODE_ENV=production
-EXPOSE 8787
+EXPOSE 8080
 CMD ["npm", "run", "start", "--workspace", "@highlander/server"]
