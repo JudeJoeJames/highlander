@@ -103,6 +103,8 @@ let downY = 0;
 let downCardId: string | null = null;
 let downZone: { playerId: string; zone: Zone } | null = null;
 let lastSent = 0;
+let lastTapId: string | null = null;
+let lastTapAt = 0;
 
 function setNdc(e: PointerEvent) {
   ndc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
@@ -144,6 +146,22 @@ function setSelection(ids: Iterable<string>) {
   selection.clear();
   for (const id of ids) selection.add(id);
   board.setSelection(selection);
+}
+
+/** Route a tap through double-click detection: a quick second tap on the same
+ *  battlefield permanent you control toggles its tapped state (instead of detail). */
+function onCardTap(cardId: string, shift: boolean) {
+  const now = performance.now();
+  const isDouble = !shift && cardId === lastTapId && now - lastTapAt < 300;
+  lastTapId = cardId;
+  lastTapAt = now;
+  const c = latest?.cards[cardId];
+  if (isDouble && c && c.zone === Zone.Battlefield && c.controllerId === you) {
+    detail.hide();
+    net?.send({ type: "set_tapped", instanceId: cardId, tapped: !c.tapped });
+    return;
+  }
+  handleTap(cardId, shift);
 }
 
 /** Handle a tap (no drag): shift-click toggles selection; a plain click opens detail. */
@@ -235,7 +253,7 @@ canvas.addEventListener("pointerup", (e) => {
         }
       }
     } else {
-      handleTap(downCardId ?? drag.ids[0]!, e.shiftKey);
+      onCardTap(downCardId ?? drag.ids[0]!, e.shiftKey);
     }
     board.setDragging(null);
     drag = null;
@@ -245,7 +263,7 @@ canvas.addEventListener("pointerup", (e) => {
   }
   // Plain click: card → detail/select; zone pad → contents; empty → clear selection.
   const tap = Math.hypot(e.clientX - downX, e.clientY - downY) < 5;
-  if (tap && downCardId) handleTap(downCardId, e.shiftKey);
+  if (tap && downCardId) onCardTap(downCardId, e.shiftKey);
   else if (tap && downZone) openZoneViewer(downZone.playerId, downZone.zone);
   else if (tap) setSelection([]);
   downCardId = null;
@@ -329,7 +347,7 @@ function openHelp() {
   panel.innerHTML =
     "<h3>Shortcuts &amp; controls</h3>" +
     '<div class="modal-note"><b>D</b> draw · <b>N</b> next phase · <b>E</b> end turn · <b>S</b> shuffle · <b>U</b> untap all · <b>T</b> tap/untap selection · <b>Esc</b> clear · <b>?</b> this help</div>' +
-    '<div class="modal-note">Drag your battlefield cards to move them (snaps to a grid). Drag a hand card onto the table to play it. Drop a card on a zone pad (Library / Graveyard / Exile / Command) to send it there. Shift-click permanents to multi-select, then drag or press T together. Click any card for a closer look; click a zone pad to view its contents.</div>' +
+    '<div class="modal-note">Drag your battlefield cards to move them. Drag a hand card onto the table to play it. Drop a card on a zone pad (Library / Graveyard / Exile / Command) to send it there. Shift-click permanents to multi-select, then drag or press T together. Click a card for a closer look; double-click a permanent to tap/untap it; click a zone pad to view its contents.</div>' +
     '<div class="modal-note">Left-drag pans · right-drag tilts · scroll zooms.</div>';
   const b = document.createElement("button");
   b.className = "primary";

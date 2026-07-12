@@ -13,8 +13,13 @@ const H = 356;
 function counterString(counters: Record<string, number>): string {
   return Object.entries(counters)
     .filter(([, v]) => v !== 0)
-    .map(([k, v]) => `${k}:${v}`)
-    .join(",");
+    .map(([k, v]) => {
+      // +1/+1 and -1/-1 counters read as the aggregate P/T change (+n/+n, -n/-n).
+      if (k === "+1/+1") return `+${v}/+${v}`;
+      if (k === "-1/-1") return `-${v}/-${v}`;
+      return `${v} ${k}`;
+    })
+    .join("  ");
 }
 
 function finalize(canvas: HTMLCanvasElement, key: string): Texture {

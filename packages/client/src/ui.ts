@@ -169,6 +169,8 @@ export function cardDetail(send: Send) {
       act("Graveyard", { type: "move_card", instanceId: id, toZone: Zone.Graveyard });
       act("Exile", { type: "move_card", instanceId: id, toZone: Zone.Exile });
       act("Library top", { type: "move_card", instanceId: id, toZone: Zone.Library, index: 0 });
+      // Omitting index appends → bottom of library.
+      act("Library bottom", { type: "move_card", instanceId: id, toZone: Zone.Library });
       if (onBf) {
         act("+1/+1 ＋", { type: "adjust_card_counter", instanceId: id, key: "+1/+1", delta: 1 }, false);
         act("+1/+1 −", { type: "adjust_card_counter", instanceId: id, key: "+1/+1", delta: -1 }, false);
