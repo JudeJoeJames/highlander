@@ -97,6 +97,10 @@ button.danger { border-color: var(--danger); color: #f0b4b2; }
 .nameplate.disconnected { opacity: 0.5; }
 .nameplate .life-row { display: flex; align-items: center; justify-content: center; gap: 3px; margin-top: 2px; }
 .life-btn { pointer-events: auto; padding: 1px 6px; font-size: 12px; line-height: 1.4; border-radius: 6px; }
+.nameplate .counters { display: flex; flex-wrap: wrap; gap: 3px; justify-content: center; margin-top: 2px; }
+.cchip { font-size: 11px; background: var(--panel-solid); border: 1px solid var(--border); border-radius: 6px; padding: 1px 5px; }
+.counter-ctl { display: flex; align-items: center; justify-content: center; gap: 3px; margin-top: 2px; font-size: 12px; }
+.cbtn { pointer-events: auto; padding: 1px 5px; font-size: 11px; line-height: 1.4; border-radius: 6px; }
 
 /* Turn / phase strip */
 #phasestrip {

@@ -101,6 +101,22 @@ test("redaction hides libraries from all and hands from opponents", () => {
   assert.notEqual(viewForB.cards[cmdA]!.hidden, true, "command zone is public");
 });
 
+test("+1/+1 and -1/-1 counters annihilate in pairs", () => {
+  let s = apply(twoPlayerGame(), "A", { type: "start_game" });
+  const id = s.players["A"]!.hand[0]!;
+  s = apply(s, "A", { type: "move_card", instanceId: id, toZone: Zone.Battlefield });
+  s = apply(s, "A", { type: "adjust_card_counter", instanceId: id, key: "+1/+1", delta: 3 });
+  s = apply(s, "A", { type: "adjust_card_counter", instanceId: id, key: "-1/-1", delta: 1 });
+  // One -1/-1 cancels one +1/+1 → net +2/+2, no -1/-1 left.
+  assert.equal(s.cards[id]!.counters["+1/+1"], 2);
+  assert.equal(s.cards[id]!.counters["-1/-1"], undefined);
+
+  // Adding two more -1/-1 wipes the remaining +2/+2 and leaves nothing.
+  s = apply(s, "A", { type: "adjust_card_counter", instanceId: id, key: "-1/-1", delta: 2 });
+  assert.equal(s.cards[id]!.counters["+1/+1"], undefined);
+  assert.equal(s.cards[id]!.counters["-1/-1"], undefined);
+});
+
 test("reduce does not mutate its input (purity)", () => {
   const s = twoPlayerGame();
   const before = structuredClone(s);

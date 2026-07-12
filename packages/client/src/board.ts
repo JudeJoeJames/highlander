@@ -59,6 +59,7 @@ export class Board {
     private readonly scene: Scene,
     private readonly library: CardLibrary,
     private readonly onLife: (playerId: PlayerId, delta: number) => void,
+    private readonly onCounter: (playerId: PlayerId, key: string, value: number) => void,
   ) {}
 
   /** Current seat frames (used by the camera to focus a seat). */
@@ -291,6 +292,20 @@ export class Board {
       .map(([k, v]) => `${v}${k}`)
       .join(" ");
 
+    const chips = Object.entries(player.counters)
+      .filter(([, v]) => v !== 0)
+      .map(([k, v]) => `<span class="cchip">${escapeHtml(k)} ${v}</span>`)
+      .join("");
+
+    // Steppers for the two common Commander counters, only on your own plate.
+    const ctl =
+      player.id === you
+        ? `<div class="counter-ctl">
+             <span>☠</span><button class="cbtn" data-k="poison" data-d="-1">−</button><button class="cbtn" data-k="poison" data-d="1">+</button>
+             <span>⚡</span><button class="cbtn" data-k="energy" data-d="-1">−</button><button class="cbtn" data-k="energy" data-d="1">+</button>
+           </div>`
+        : "";
+
     entry.el.innerHTML = `
       <div class="name">${escapeHtml(player.name)}</div>
       <div class="life-row">
@@ -301,10 +316,19 @@ export class Board {
         <button class="life-btn" data-delta="5">+5</button>
       </div>
       <div class="zones">H ${player.hand.length} · L ${player.library.length} · G ${player.graveyard.length} · E ${player.exile.length} · C ${player.command.length}</div>
+      ${chips ? `<div class="counters">${chips}</div>` : ""}
+      ${ctl}
       ${mana ? `<div class="mana">${escapeHtml(mana)}</div>` : ""}`;
 
     for (const btn of entry.el.querySelectorAll<HTMLButtonElement>(".life-btn")) {
       btn.onclick = () => this.onLife(player.id, Number(btn.dataset.delta));
+    }
+    for (const btn of entry.el.querySelectorAll<HTMLButtonElement>(".cbtn")) {
+      btn.onclick = () => {
+        const key = btn.dataset.k!;
+        const cur = player.counters[key] ?? 0;
+        this.onCounter(player.id, key, Math.max(0, cur + Number(btn.dataset.d)));
+      };
     }
   }
 }

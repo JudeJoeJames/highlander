@@ -172,10 +172,9 @@ export function cardDetail(send: Send) {
       // Omitting index appends → bottom of library.
       act("Library bottom", { type: "move_card", instanceId: id, toZone: Zone.Library });
       if (onBf) {
-        act("+1/+1 ＋", { type: "adjust_card_counter", instanceId: id, key: "+1/+1", delta: 1 }, false);
-        act("+1/+1 −", { type: "adjust_card_counter", instanceId: id, key: "+1/+1", delta: -1 }, false);
-        act("−1/−1 ＋", { type: "adjust_card_counter", instanceId: id, key: "-1/-1", delta: 1 }, false);
-        act("−1/−1 −", { type: "adjust_card_counter", instanceId: id, key: "-1/-1", delta: -1 }, false);
+        // Adding the opposite counter cancels (annihilates) the other.
+        act("+1/+1", { type: "adjust_card_counter", instanceId: id, key: "+1/+1", delta: 1 }, false);
+        act("−1/−1", { type: "adjust_card_counter", instanceId: id, key: "-1/-1", delta: 1 }, false);
       }
       el.appendChild(actions);
     }

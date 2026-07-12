@@ -24,7 +24,12 @@ const cameraCtl = new CameraController(camera, renderer.domElement);
 const cards = new CardLibrary("/api", () => {
   if (latest) board.update(latest, you);
 });
-const board = new Board(scene, cards, (playerId, delta) => net?.send({ type: "adjust_life", playerId, delta }));
+const board = new Board(
+  scene,
+  cards,
+  (playerId, delta) => net?.send({ type: "adjust_life", playerId, delta }),
+  (playerId, key, value) => net?.send({ type: "set_counter", playerId, key, value }),
+);
 window.addEventListener("resize", resize);
 
 function frame() {
@@ -105,6 +110,12 @@ let downZone: { playerId: string; zone: Zone } | null = null;
 let lastSent = 0;
 let lastTapId: string | null = null;
 let lastTapAt = 0;
+let rightDownX = 0;
+let rightDownY = 0;
+let rightCardId: string | null = null;
+
+// Right-click inspects a card; suppress the browser context menu on the board.
+canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
 function setNdc(e: PointerEvent) {
   ndc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
@@ -180,6 +191,14 @@ function handleTap(cardId: string, shift: boolean) {
 }
 
 canvas.addEventListener("pointerdown", (e) => {
+  // Right button: remember what was under the cursor (open detail on release if
+  // it wasn't a camera-tilt drag). Left-drag with the camera stays untouched.
+  if (e.button === 2 && latest) {
+    rightDownX = e.clientX;
+    rightDownY = e.clientY;
+    rightCardId = pickCardId(e);
+    return;
+  }
   if (e.button !== 0 || !latest) return;
   downX = e.clientX;
   downY = e.clientY;
@@ -230,6 +249,11 @@ canvas.addEventListener("pointermove", (e) => {
 });
 
 canvas.addEventListener("pointerup", (e) => {
+  if (e.button === 2) {
+    if (rightCardId && Math.hypot(e.clientX - rightDownX, e.clientY - rightDownY) < 5) openDetailFor(rightCardId);
+    rightCardId = null;
+    return;
+  }
   if (drag) {
     cameraCtl.controls.enabled = true;
     try {
@@ -347,7 +371,7 @@ function openHelp() {
   panel.innerHTML =
     "<h3>Shortcuts &amp; controls</h3>" +
     '<div class="modal-note"><b>D</b> draw · <b>N</b> next phase · <b>E</b> end turn · <b>S</b> shuffle · <b>U</b> untap all · <b>T</b> tap/untap selection · <b>Esc</b> clear · <b>?</b> this help</div>' +
-    '<div class="modal-note">Drag your battlefield cards to move them. Drag a hand card onto the table to play it. Drop a card on a zone pad (Library / Graveyard / Exile / Command) to send it there. Shift-click permanents to multi-select, then drag or press T together. Click a card for a closer look; double-click a permanent to tap/untap it; click a zone pad to view its contents.</div>' +
+    '<div class="modal-note">Drag your battlefield cards to move them. Drag a hand card onto the table to play it. Drop a card on a zone pad (Library / Graveyard / Exile / Command) to send it there. Shift-click permanents to multi-select, then drag or press T together. Click or right-click a card for a closer look; double-click a permanent to tap/untap it; click a zone pad to view its contents.</div>' +
     '<div class="modal-note">Left-drag pans · right-drag tilts · scroll zooms.</div>';
   const b = document.createElement("button");
   b.className = "primary";

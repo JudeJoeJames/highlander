@@ -302,6 +302,18 @@ function applyAction(state: GameState, action: Action, actorId: PlayerId): strin
       const next = (c.counters[action.key] ?? 0) + action.delta;
       if (next === 0) delete c.counters[action.key];
       else c.counters[action.key] = next;
+      // +1/+1 and -1/-1 counters annihilate in pairs (MTG state-based action).
+      if (action.key === "+1/+1" || action.key === "-1/-1") {
+        const plus = c.counters["+1/+1"] ?? 0;
+        const minus = c.counters["-1/-1"] ?? 0;
+        const m = Math.min(plus, minus);
+        if (m > 0) {
+          if (plus - m === 0) delete c.counters["+1/+1"];
+          else c.counters["+1/+1"] = plus - m;
+          if (minus - m === 0) delete c.counters["-1/-1"];
+          else c.counters["-1/-1"] = minus - m;
+        }
+      }
       return null;
     }
 
