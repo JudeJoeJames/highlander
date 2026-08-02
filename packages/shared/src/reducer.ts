@@ -94,6 +94,15 @@ function removeFromZone(state: GameState, c: CardInstance): void {
   if (i >= 0) list.splice(i, 1);
 }
 
+/** Delete a card from the game entirely (used for tokens that leave the battlefield). */
+function destroyCard(state: GameState, c: CardInstance): void {
+  removeFromZone(state, c);
+  for (const other of Object.values(state.cards)) {
+    if (other.attachedTo === c.instanceId) delete other.attachedTo;
+  }
+  delete state.cards[c.instanceId];
+}
+
 /** Core movement primitive used by many actions. */
 function moveCard(
   state: GameState,
@@ -101,9 +110,17 @@ function moveCard(
   toZone: Zone,
   opts: { index?: number; x?: number; y?: number } = {},
 ): void {
-  removeFromZone(state, c);
-
   const leavingBattlefield = c.zone === Zone.Battlefield && toZone !== Zone.Battlefield;
+
+  // Tokens cease to exist the instant they leave the battlefield. This is a
+  // universal, card-agnostic rule (state-based action in MTG), so it fits the
+  // manual-first design: no card text needed to enforce it.
+  if (leavingBattlefield && c.isToken) {
+    destroyCard(state, c);
+    return;
+  }
+
+  removeFromZone(state, c);
   c.zone = toZone;
 
   // Objects shed transient state when they leave the battlefield, and control
@@ -355,6 +372,17 @@ function applyAction(state: GameState, action: Action, actorId: PlayerId): strin
       if (action.text) c.annotation = action.text;
       else delete c.annotation;
       return null;
+    }
+
+    case "create_token": {
+      requireActive(state);
+      const p = player(state, action.playerId);
+      const c = newInstance(state, action.scryfallId, action.playerId, Zone.Battlefield);
+      c.isToken = true;
+      if (action.x !== undefined) c.x = action.x;
+      if (action.y !== undefined) c.y = action.y;
+      state.battlefield.push(c.instanceId);
+      return `${p.name} created a token.`;
     }
 
     case "draw": {

@@ -9,6 +9,7 @@ import { CardLibrary } from "./cards";
 import { worldToBattlefield } from "./layout";
 import { cardDetail, chatPanel, phaseStrip, statusBar, toolbar } from "./ui";
 import { openDeckbuilder } from "./deckbuilder";
+import { openTokenPicker } from "./tokens";
 import { listDecks } from "./api";
 import { testDeck } from "./deck";
 
@@ -514,6 +515,8 @@ joinForm.addEventListener("submit", (e) => {
   toolbar((action) => net?.send(action), you, {
     onOpenDecks: () => openDeckbuilder(getUserId()),
     onLoadDeck: () => void openDeckPicker(),
+    onCreateToken: () =>
+      openTokenPicker((scryfallId) => net?.send({ type: "create_token", playerId: you, scryfallId })),
   });
   const keysBtn = document.createElement("button");
   keysBtn.textContent = "Keys";

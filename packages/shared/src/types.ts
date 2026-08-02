@@ -108,6 +108,9 @@ export interface CardInstance {
   /** Free text shown on the stack or as a note (manual mode). */
   annotation?: string;
 
+  /** True for created tokens. Tokens cease to exist when they leave the battlefield. */
+  isToken?: boolean;
+
   /** Set only in redacted views sent to players who may not see this card. */
   hidden?: boolean;
 }

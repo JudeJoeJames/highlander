@@ -57,6 +57,7 @@ function mask(c: CardInstance): CardInstance {
     counters: c.zone === Zone.Battlefield ? c.counters : {},
     ...(c.x !== undefined ? { x: c.x } : {}),
     ...(c.y !== undefined ? { y: c.y } : {}),
+    ...(c.isToken ? { isToken: true } : {}),
     hidden: true,
   };
 }

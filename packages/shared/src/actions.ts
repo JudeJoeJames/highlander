@@ -60,6 +60,12 @@ export type Action =
   | { type: "set_controller"; instanceId: InstanceId; controllerId: PlayerId }
   | { type: "attach"; instanceId: InstanceId; toInstanceId: InstanceId | null }
   | { type: "annotate"; instanceId: InstanceId; text: string }
+  /**
+   * Conjure a token onto `playerId`'s battlefield from a Scryfall token card id.
+   * Tokens are ordinary card instances with `isToken: true`; the reducer removes
+   * them from existence whenever they leave the battlefield.
+   */
+  | { type: "create_token"; playerId: PlayerId; scryfallId: ScryfallId; x?: number; y?: number }
 
   // --- Library operations ----------------------------------------------------
   | { type: "draw"; playerId: PlayerId; count: number }

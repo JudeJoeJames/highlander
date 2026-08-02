@@ -70,6 +70,7 @@ export function phaseStrip(send: Send) {
 export interface ToolbarActions {
   onLoadDeck: () => void;
   onOpenDecks: () => void;
+  onCreateToken: () => void;
 }
 
 /** Bottom toolbar of common manual actions. */
@@ -89,6 +90,7 @@ export function toolbar(send: Send, you: PlayerId, actions: ToolbarActions) {
   btn("Start", () => send({ type: "start_game" }), "primary");
   btn("Draw", () => send({ type: "draw", playerId: you, count: 1 }));
   btn("Shuffle", () => send({ type: "shuffle", playerId: you }));
+  btn("Token", actions.onCreateToken);
   btn("Life −1", () => send({ type: "adjust_life", playerId: you, delta: -1 }));
   btn("Life +1", () => send({ type: "adjust_life", playerId: you, delta: 1 }));
   btn("Next phase", () => send({ type: "advance_phase" }));
