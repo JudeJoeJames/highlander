@@ -157,3 +157,16 @@ export function zoneAt(frame: SeatFrame, point: { x: number; z: number }, radius
   }
   return null;
 }
+
+/**
+ * Hit-test a world point against this seat's hand-fan region. The fan lives on
+ * the seat's near edge, in front of but not overlapping the battlefield
+ * (BF_NEAR = 1.3), and doesn't reach as far right as the zone-pad cluster.
+ */
+export function handAt(frame: SeatFrame, point: { x: number; z: number }): boolean {
+  const dx = point.x - frame.pos.x;
+  const dz = point.z - frame.pos.z;
+  const along = dx * frame.toCenter.x + dz * frame.toCenter.z;
+  const across = dx * frame.right.x + dz * frame.right.z;
+  return along >= -0.4 && along <= 1.0 && Math.abs(across) <= 2.6;
+}

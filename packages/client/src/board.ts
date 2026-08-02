@@ -21,6 +21,7 @@ import {
   CARD_W,
   fanPositions,
   gridPositions,
+  handAt,
   seatFrames,
   seatYaw,
   ZONE_LAYOUT,
@@ -165,6 +166,12 @@ export class Board {
     return zoneAt(frame, point);
   }
 
+  /** True if a world point falls on `playerId`'s hand-fan region. */
+  handHitTest(playerId: PlayerId, point: { x: number; z: number }): boolean {
+    const frame = this.frames.find((f) => f.playerId === playerId);
+    return !!frame && handAt(frame, point);
+  }
+
   /** Draw each seat's Library/Graveyard/Exile/Command as labeled pads with a top card. */
   private renderZones(state: GameState, frame: SeatFrame, player: PlayerState, live: Set<string>): void {
     const yaw = seatYaw(frame);
@@ -176,8 +183,12 @@ export class Board {
       // Library/Graveyard "top" is the front of the array for library, back for the rest.
       const topId = zone === Zone.Library ? ids[0] : ids[ids.length - 1];
       if (topId) {
-        const top = state.cards[topId];
-        if (top) this.placeCard(top, { x: anchor.x, y: 0.03, z: anchor.z }, yaw, live);
+        if (this.draggingIds.has(topId)) {
+          live.add(topId); // being dragged off its pad; leave its position alone
+        } else {
+          const top = state.cards[topId];
+          if (top) this.placeCard(top, { x: anchor.x, y: 0.03, z: anchor.z }, yaw, live);
+        }
       }
       this.updateZoneLabel(player.id, zone, `${label} ${ids.length}`, anchor);
     });

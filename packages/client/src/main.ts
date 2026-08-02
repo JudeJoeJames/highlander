@@ -101,7 +101,7 @@ const tablePlane = new Plane(new Vector3(0, 1, 0), 0);
 const planeHit = new Vector3();
 
 let drag:
-  | { ids: string[]; moved: boolean; fromHand: boolean; start: Map<string, { x: number; z: number }>; px: number; pz: number }
+  | { ids: string[]; moved: boolean; offBattlefield: boolean; start: Map<string, { x: number; z: number }>; px: number; pz: number }
   | null = null;
 let downX = 0;
 let downY = 0;
@@ -207,11 +207,16 @@ canvas.addEventListener("pointerdown", (e) => {
   downZone = id ? null : pickZoneAt(e);
   const card = id ? latest.cards[id] : undefined;
 
-  // Draggable: your battlefield permanents (reposition, possibly as a group)
-  // and your hand cards (drag onto the table to play). Take the pointer.
+  // Draggable: your battlefield permanents (reposition, possibly as a group),
+  // your hand cards (drag onto the table to play), and the top card of your
+  // Graveyard / Exile / Command pads. Library stays hidden — no peeking by drag.
   const onBf = card?.zone === Zone.Battlefield && card.controllerId === you;
   const inHand = card?.zone === Zone.Hand && card.ownerId === you;
-  if (!card || (!onBf && !inHand)) return;
+  const inPersonalZone =
+    !!card &&
+    card.ownerId === you &&
+    (card.zone === Zone.Graveyard || card.zone === Zone.Exile || card.zone === Zone.Command);
+  if (!card || (!onBf && !inHand && !inPersonalZone)) return;
 
   // If dragging a selected permanent, move the whole selection together.
   const ids = onBf && selection.has(card.instanceId) ? [...selection] : [card.instanceId];
@@ -221,7 +226,7 @@ canvas.addEventListener("pointerdown", (e) => {
     if (wp) start.set(dragId, { x: wp.x, z: wp.z });
   }
   const p0 = pointerOnTable(e);
-  drag = { ids, moved: false, fromHand: !!inHand, start, px: p0?.x ?? 0, pz: p0?.z ?? 0 };
+  drag = { ids, moved: false, offBattlefield: !onBf, start, px: p0?.x ?? 0, pz: p0?.z ?? 0 };
   board.setDragging(ids);
   cameraCtl.controls.enabled = false;
   canvas.setPointerCapture(e.pointerId);
@@ -237,9 +242,9 @@ canvas.addEventListener("pointermove", (e) => {
   // Lift dragged cards above the rest of the table so they read as "picked up".
   for (const [id, s] of drag.start) board.moveMeshLocal(id, { x: s.x + dx, y: 0.5, z: s.z + dz });
 
-  // Stream battlefield repositions live (hand cards commit once on drop).
+  // Stream battlefield repositions live (off-battlefield drags commit once on drop).
   const now = performance.now();
-  if (drag.moved && !drag.fromHand && now - lastSent > 80) {
+  if (drag.moved && !drag.offBattlefield && now - lastSent > 80) {
     lastSent = now;
     for (const [id, s] of drag.start) {
       const c = bfCoords(s.x + dx, s.z + dz);
@@ -263,7 +268,9 @@ canvas.addEventListener("pointerup", (e) => {
     }
     if (drag.moved) {
       const p = pointerOnTable(e);
-      const zone = p ? board.zoneHitTest(you, p) : null;
+      // Drop target priority: an explicit zone pad, else the hand-fan region,
+      // else the battlefield (positioned by the drop point).
+      const zone = p ? (board.zoneHitTest(you, p) ?? (board.handHitTest(you, p) ? Zone.Hand : null)) : null;
       const dx = p ? p.x - drag.px : 0;
       const dz = p ? p.z - drag.pz : 0;
       for (const [id, s] of drag.start) {
@@ -272,7 +279,7 @@ canvas.addEventListener("pointerup", (e) => {
         } else {
           const c = bfCoords(s.x + dx, s.z + dz);
           if (!c) continue;
-          if (drag.fromHand) net?.send({ type: "move_card", instanceId: id, toZone: Zone.Battlefield, x: c.x, y: c.y });
+          if (drag.offBattlefield) net?.send({ type: "move_card", instanceId: id, toZone: Zone.Battlefield, x: c.x, y: c.y });
           else net?.send({ type: "set_card_position", instanceId: id, x: c.x, y: c.y });
         }
       }
@@ -371,7 +378,7 @@ function openHelp() {
   panel.innerHTML =
     "<h3>Shortcuts &amp; controls</h3>" +
     '<div class="modal-note"><b>D</b> draw · <b>N</b> next phase · <b>E</b> end turn · <b>S</b> shuffle · <b>U</b> untap all · <b>T</b> tap/untap selection · <b>Esc</b> clear · <b>?</b> this help</div>' +
-    '<div class="modal-note">Drag your battlefield cards to move them. Drag a hand card onto the table to play it. Drop a card on a zone pad (Library / Graveyard / Exile / Command) to send it there. Shift-click permanents to multi-select, then drag or press T together. Click or right-click a card for a closer look; double-click a permanent to tap/untap it; click a zone pad to view its contents.</div>' +
+    '<div class="modal-note">Drag any of your cards between zones: from your hand, battlefield, or the top card of Graveyard / Exile / Command. Drop onto the table to play, onto a zone pad to send it there, or onto your hand-fan area to return it to hand. Shift-click permanents to multi-select, then drag or press T together. Click or right-click a card for a closer look; double-click a permanent to tap/untap it; click a zone pad to view its contents.</div>' +
     '<div class="modal-note">Left-drag pans · right-drag tilts · scroll zooms.</div>';
   const b = document.createElement("button");
   b.className = "primary";
